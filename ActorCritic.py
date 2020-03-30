@@ -150,10 +150,9 @@ class BoxWorldA2C():
     def update_TD(self, rewards, log_probs, states, done, bootstrap=None):   
         
         ### Wrap variables into tensors ###
+        old_states = torch.tensor(states[:-1]).float().to(self.device)
+        new_states = torch.tensor(states[1:]).float().to(self.device)
         
-        old_states = torch.tensor(states[:,:-1]).float().to(self.device)
-        new_states = torch.tensor(states[:,1:]).float().to(self.device)
-            
         if bootstrap is not None:
             done[bootstrap] = False 
         done = torch.LongTensor(done.astype(int)).to(self.device)
@@ -225,14 +224,15 @@ class BoxWorldA2C():
         return policy_grad.item()
     
     def update_MC(self, rewards, log_probs, states, done, bootstrap=None):   
-        
+        print("states: ", states.shape)
         ### Compute MC discounted returns ###
         
         if bootstrap is not None:
             
             if bootstrap[-1] == True:
             
-                last_state = torch.tensor(states[0,-1,:]).float().to(self.device).view(1,-1)
+                last_state = torch.tensor(states[-1]).float().to(self.device).unsqueeze(0)
+                print("last_state: ", last_state.shape)
                 
                 if self.twin:
                     V1, V2 = self.critic(last_state)
@@ -256,9 +256,10 @@ class BoxWorldA2C():
         
         dr = torch.tensor(discounted_rewards).float().to(self.device) 
         
-        old_states = torch.tensor(states[:,:-1]).float().to(self.device)
-        new_states = torch.tensor(states[:,1:]).float().to(self.device)
-            
+        old_states = torch.tensor(states[:-1]).float().to(self.device)
+        new_states = torch.tensor(states[1:]).float().to(self.device)
+        print("old_states.shape: ", old_states.shape)
+        print("new_states.shape: ", new_states.shape)
         done = torch.LongTensor(done.astype(int)).to(self.device)
         log_probs = torch.stack(log_probs).to(self.device)
         

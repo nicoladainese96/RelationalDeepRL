@@ -8,7 +8,7 @@ debug = False
 
 class ExtractEntities(nn.Module):
     """Parse raw RGB pixels into entieties (vectors of k_out dimensions)"""
-    def __init__(self, k_out, k_in=3, kernel_size=2, stride=1, padding=0):
+    def __init__(self, k_out, k_in=1, kernel_size=2, stride=1, padding=0):
         super(ExtractEntities, self).__init__()
         assert k_out%2 == 0, "Please provide an even number of output kernels k_out"
         layers = []
@@ -23,6 +23,8 @@ class ExtractEntities(nn.Module):
         Accepts an input of shape (batch_size, linear_size, linear_size, k_in)
         Returns a tensor of shape (batch_size, linear_size, linear_size, 2*k_out)
         """
+        if debug:
+            print("x.shape (before ExtractEntities): ", x.shape)
         x = self.net(x)
         if debug:
             print("x.shape (ExtractEntities): ", x.shape)
@@ -63,11 +65,11 @@ class PositionalEncoding(nn.Module):
         y_ax = x.shape[-1]
         
         x_lin = torch.linspace(-1,1,x_ax)
-        xx = x_lin.repeat(y_ax).view(1, 1, y_ax, x_ax).transpose(3,2)
+        xx = x_lin.repeat(x.shape[0],y_ax,1).view(-1, 1, y_ax, x_ax).transpose(3,2)
         
         y_lin = torch.linspace(-1,1,y_ax).view(-1,1)
-        yy = y_lin.repeat(1,x_ax).view(1, 1, y_ax, x_ax).transpose(3,2)
-
+        yy = y_lin.repeat(x.shape[0],1,x_ax).view(-1, 1, y_ax, x_ax).transpose(3,2)
+        
         x = torch.cat((x,xx,yy), axis=1)
         return x
     
@@ -185,11 +187,11 @@ class BoxWorldNet(nn.Module):
     - Multi-layer Perceptron with some (defaul = 4) fully-connected layers
     
     """
-    def __init__(self, in_channels=3, n_kernels=24, n_features=256, n_heads=4, n_attn_modules=2, n_linears=4):
+    def __init__(self, in_channels=1, n_kernels=24, n_features=256, n_heads=4, n_attn_modules=2, n_linears=4):
         """
         Parameters
         ----------
-        in_channels: int (default 3)
+        in_channels: int (default 1)
             Number of channels of the input image (e.g. 3 for RGB)
         n_kernels: int (default 24)
             Number of features extracted for each pixel
@@ -205,6 +207,8 @@ class BoxWorldNet(nn.Module):
             Number of fully-connected layers after the FeaturewiseMaxPool layer
         """
         super(BoxWorldNet, self).__init__()
+        
+        self.n_features = n_features
         
         MLP = clones( nn.Linear(n_features,n_features), n_linears)
         

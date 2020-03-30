@@ -38,7 +38,7 @@ class BoxWorldActor(nn.Module):
         
     def forward(self, state):
         out = self.boxnet(state)
-        log_probs = F.log_softmax(self.linear(state), dim=1)
+        log_probs = F.log_softmax(self.linear(out), dim=1)
         return log_probs
         
 class BoxWorldBasicCritic(nn.Module):
