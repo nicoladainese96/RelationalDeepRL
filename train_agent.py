@@ -1,5 +1,7 @@
 import sys
+
 sys.path.insert(0, "pycolab/pycolab/examples/research/box_world")
+
 import box_world as bw
 
 import numpy as np
@@ -70,24 +72,33 @@ def play_episode(agent, game, max_steps=120):
 
 def train_boxworld(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False):
     performance = []
+    time_profile = []
+    
     for e in range(n_episodes):
-        #print("Playing episode %d... "%(e+1))
         
+        #print("Playing episode %d... "%(e+1))
+        t0 = time.time()
         game = bw.make_game(**game_params)
         rewards, log_probs, states, done, bootstrap = play_episode(agent, game, max_steps)
+        t1 = time.time()
+        print("Time playing the episode: %.2f s"%(t1-t0))
         performance.append(np.sum(rewards))
         #if (e+1)%100 == 0:
         #    print("Episode %d - reward: %.0f"%(e+1, np.mean(performance[-100:])))
         print("Episode %d - reward: %.0f"%(e+1, performance[-1]))
 
         agent.update(rewards, log_probs, states, done, bootstrap)
-
+        t2 = time.time()
+        print("Time updating the agent: %.2f s"%(t2-t1))
             
+        time_profile.append([t1-t0, t2-t1])
+        
     performance = np.array(performance)
+    time_profile = np.array(time_profile)
     L = n_episodes // 6 # consider last sixth of episodes to compute agent's asymptotic performance
     
     if return_agent:
-        return performance, performance[-L:].mean(), performance[-L:].std(), agent
+        return performance, performance[-L:].mean(), performance[-L:].std(), agent, time_profile
     else:
         return performance, performance[-L:].mean(), performance[-L:].std()
 

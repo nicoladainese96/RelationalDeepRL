@@ -70,7 +70,12 @@ class PositionalEncoding(nn.Module):
         y_lin = torch.linspace(-1,1,y_ax).view(-1,1)
         yy = y_lin.repeat(x.shape[0],1,x_ax).view(-1, 1, y_ax, x_ax).transpose(3,2)
         
-        x = torch.cat((x,xx,yy), axis=1)
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+    
+        x = torch.cat((x,xx.to(device),yy.to(device)), axis=1)
         return x
     
 class PositionwiseFeedForward(nn.Module):
