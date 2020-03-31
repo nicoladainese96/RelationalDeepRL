@@ -1,6 +1,6 @@
 [submodule "RelationalModule"]
 	path = RelationalModule
-	url = git@version.aalto.fi:dainesn1/relationalmodule.git
+	url = https://github.com/nicoladainese96/RelationalModule.git
 [submodule "pycolab"]
 	path = pycolab
 	url = https://github.com/deepmind/pycolab.git
