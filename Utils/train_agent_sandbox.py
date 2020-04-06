@@ -53,6 +53,12 @@ def play_episode(agent, env, max_steps):
 
     return rewards, log_probs, distributions, np.array(states), done, bootstrap
 
+def random_start(X=10, Y=10):
+    s1, s2 = np.random.choice(X*Y, 2, replace=False)
+    initial = [s1//X, s1%X]
+    goal = [s2//X, s2%X]
+    return initial, goal
+
 def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False):
     performance = []
     time_profile = []
@@ -62,6 +68,13 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
     
     for e in range(n_episodes):
         
+        # Change game params
+        initial, goal = random_start(game_params["X"], game_params["Y"])
+
+        # All game parameters
+        game_params["initial"] = initial
+        game_params["goal"] = goal
+
         #print("Playing episode %d... "%(e+1))
         t0 = time.time()
         env = test_env.Sandbox(**game_params)
