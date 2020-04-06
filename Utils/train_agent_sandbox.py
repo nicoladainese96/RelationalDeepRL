@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from RelationalModule import ActorCritic
-from RelationalModule import test_env
+from Utils import test_env
 import time
 from importlib import reload
 
