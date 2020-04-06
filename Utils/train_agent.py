@@ -1,6 +1,6 @@
 import sys
 
-sys.path.insert(0, "pycolab/pycolab/examples/research/box_world")
+sys.path.insert(0, "RelationalDeepRL/pycolab/pycolab/examples/research/box_world")
 
 import box_world as bw
 

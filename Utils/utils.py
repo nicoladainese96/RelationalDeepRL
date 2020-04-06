@@ -3,7 +3,7 @@ import random
 import os
 import numpy as np 
 import sys
-sys.path.insert(0, "pycolab/pycolab/examples/research/box_world")
+sys.path.insert(0, "RelationalDeepRL/pycolab/pycolab/examples/research/box_world")
 import box_world as bw
 import matplotlib.pyplot as plt
 import time
