@@ -11,12 +11,12 @@ def play_episode(agent, env, max_steps):
 
     # Start the episode
     state = env.reset()
-    
+    if debug: print("state.shape: ", state.shape)
     rewards = []
     log_probs = []
     distributions = []
     states = [state]
-    not_done = []
+    done = []
     bootstrap = []
         
     steps = 0
@@ -24,7 +24,7 @@ def play_episode(agent, env, max_steps):
      
         action, log_prob, distrib = agent.get_action(state, return_log = True)
         new_state, reward, terminal, info = env.step(action)
-        
+        if debug: print("state.shape: ", new_state.shape)
         rewards.append(reward)
         log_probs.append(log_prob)
         distributions.append(distrib)
@@ -46,6 +46,8 @@ def play_episode(agent, env, max_steps):
         steps += 1
         
     rewards = np.array(rewards)
+    states = np.array(states)
+    if debug: print("states.shape: ", states.shape)
     done = np.array(done)
     bootstrap = np.array(bootstrap)
 
@@ -60,7 +62,7 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
         #print("Playing episode %d... "%(e+1))
         t0 = time.time()
         env = test_env.Sandbox(**game_params)
-        rewards, log_probs, distributions, states, done, bootstrap = play_episode(agent, game, max_steps)
+        rewards, log_probs, distributions, states, done, bootstrap = play_episode(agent, env, max_steps)
         t1 = time.time()
         #print("Time playing the episode: %.2f s"%(t1-t0))
         performance.append(np.sum(rewards))

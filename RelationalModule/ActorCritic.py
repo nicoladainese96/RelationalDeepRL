@@ -286,12 +286,11 @@ class BoxWorldA2C():
         policy_grad = torch.sum(policy_gradient)
         if debug: print("policy_grad: ", policy_grad)
             
-        distributions = torch.stack(distributions).squeeze() # shape = (T,2)
         # Compute negative entropy (no - in front)
         entropy = torch.sum(distributions*torch.log(distributions)).sum()
         if debug: print("Negative entropy: ", entropy)
         
-        loss = policy_grad + H*entropy
+        loss = policy_grad + self.H*entropy
         if debug: print("Actor loss: ", loss)
         
         # Backpropagate and update

@@ -31,6 +31,8 @@ class ExtractEntities(nn.Module):
         x = self.embed(x)
         x = x.transpose(-1,-3)
         x = x.transpose(-1,-2).reshape(x.shape[0],-1,x.shape[-2],x.shape[-1])
+        if debug:
+            print("x.shape (after Embedding and reshape): ", x.shape)
         x = self.net(x)
         if debug:
             print("x.shape (ExtractEntities): ", x.shape)

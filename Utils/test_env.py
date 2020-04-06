@@ -98,7 +98,7 @@ class Sandbox():
         grey_img = np.full(self.boundary, BACKGROUND_COLOR)
         grey_img[self.state[0],self.state[1]] = AGENT_COLOR
         grey_img[self.goal[0],self.goal[1]] = GOAL_COLOR
-        return grey_img
+        return np.array([grey_img])
     
     def reset(self, random_init=False):
         if random_init:
