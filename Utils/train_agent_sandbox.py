@@ -56,6 +56,9 @@ def play_episode(agent, env, max_steps):
 def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False):
     performance = []
     time_profile = []
+    critic_losses = [] 
+    actor_losses = []
+    entropies = []
     
     for e in range(n_episodes):
         
@@ -70,7 +73,11 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
             print("Episode %d - reward: %.2f"%(e+1, np.mean(performance[-10:])))
         #print("Episode %d - reward: %.0f"%(e+1, performance[-1]))
 
-        agent.update(rewards, log_probs, distributions, states, done, bootstrap)
+        critic_loss, actor_loss, entropy = agent.update(rewards, log_probs, distributions, states, done, bootstrap)
+        critic_losses.append(critic_loss)
+        actor_losses.append(actor_loss)
+        entropies.append(entropy)
+    
         t2 = time.time()
         #print("Time updating the agent: %.2f s"%(t2-t1))
             
@@ -79,8 +86,8 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
     performance = np.array(performance)
     time_profile = np.array(time_profile)
     L = n_episodes // 6 # consider last sixth of episodes to compute agent's asymptotic performance
-    
+    losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
     if return_agent:
-        return performance, performance[-L:].mean(), performance[-L:].std(), agent, time_profile
+        return performance, performance[-L:].mean(), performance[-L:].std(), agent, time_profile, losses
     else:
-        return performance, performance[-L:].mean(), performance[-L:].std()
+        return performance, performance[-L:].mean(), performance[-L:].std(), losses

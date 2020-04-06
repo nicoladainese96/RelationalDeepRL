@@ -28,7 +28,7 @@ class BoxWorldA2C():
     """ 
     
     def __init__(self, action_space, lr, gamma, TD=True, twin=False, tau = 1., 
-                 H=1e-2, n_steps = 1, device='cpu', **box_net_args):
+                 H=1e-2, n_steps = 1, device='cpu', actor_lr=None, critic_lr=None, **box_net_args):
         """
         Parameters
         ----------
@@ -100,8 +100,15 @@ class BoxWorldA2C():
             for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
                 trg_params.data.copy_(params.data)
             
-        self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=lr)
-        self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        if actor_lr is not None:
+            self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
+        else:
+            self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=lr)
+            
+        if critic_lr is not None:
+            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        else:
+            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
         
         self.device = device 
         self.actor.to(self.device) 
@@ -157,11 +164,9 @@ class BoxWorldA2C():
     
     def update(self, *args):
         if self.TD:
-            critic_loss, actor_loss = self.update_TD(*args)
+            return self.update_TD(*args)
         else:
-            critic_loss, actor_loss = self.update_MC(*args)
-        
-        return critic_loss, actor_loss
+            return self.update_MC(*args)
     
     def update_TD(self, rewards, log_probs, distributions, states, done, bootstrap=None):   
         
@@ -209,9 +214,9 @@ class BoxWorldA2C():
         
         ### Update critic and then actor ###
         critic_loss = self.update_critic_TD(n_step_rewards, new_states, old_states, done, Gamma_V)
-        actor_loss = self.update_actor_TD(n_step_rewards, log_probs, distributions, new_states, old_states, done, Gamma_V)
+        actor_loss, entropy = self.update_actor_TD(n_step_rewards, log_probs, distributions, new_states, old_states, done, Gamma_V)
         
-        return critic_loss, actor_loss
+        return critic_loss, actor_loss, entropy
     
     def update_critic_TD(self, n_step_rewards, new_states, old_states, done, Gamma_V):
         
@@ -287,10 +292,10 @@ class BoxWorldA2C():
         if debug: print("policy_grad: ", policy_grad)
             
         # Compute negative entropy (no - in front)
-        entropy = torch.sum(distributions*torch.log(distributions)).sum()
+        entropy = self.H*torch.sum(distributions*torch.log(distributions)).sum()
         if debug: print("Negative entropy: ", entropy)
         
-        loss = policy_grad + self.H*entropy
+        loss = policy_grad + entropy
         if debug: print("Actor loss: ", loss)
         
         # Backpropagate and update
@@ -299,7 +304,7 @@ class BoxWorldA2C():
         loss.backward()
         self.actor_optim.step()
         
-        return loss.item()
+        return policy_grad.item(), entropy.item()
     
     def compute_n_step_rewards(self, rewards):
         """
