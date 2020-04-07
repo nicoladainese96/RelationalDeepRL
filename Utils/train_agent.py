@@ -20,28 +20,71 @@ debug = False
 def show_game_state(observation):
     for row in observation.board: print(row.tostring().decode('ascii'))
         
-def get_state(observation, mask=True):
-    #print("Keys: ", observation.layers.keys())
-    board = copy.deepcopy(observation.board)#.astype('float')
-    if debug: print("mask: ", mask)
-    if mask:
-        walls = observation.layers['#'].astype(int)
-        #print("walls: ", walls)
-        background = observation.layers[' '].astype(int)
-        #print("background: ", background)
-        ambient = walls + background
-        #print("ambient: ", ambient)
-        board[ambient.astype(bool)] = 0
-        #print("board (masked): ", board)
-    grid_size = board.shape[0]
-    board = board.reshape(1, grid_size, grid_size)
-    return board #/MAX_PIXEL
+def get_color_dict(seed=100):
+    import string
+    alphabet = string.ascii_lowercase
+    np.random.seed(seed)
+    RGB_list = np.random.rand(len(alphabet),3)
+    color_dict = {}
+    for l, c in zip(alphabet,RGB_list):
+        color_dict[l] = c
+    np.random.seed(None)
+    
+    # add colors for 'agent' and  'gem'
+    color_dict['agent'] = np.array([1.,0.,0.])
+    color_dict['gem'] = np.array([1.,1.,1.])
+    
+    return color_dict
 
-def play_episode(agent, game, max_steps, mask=True):
+def get_state(observation, state_dictionaries):
+    
+    color_dict, object_dict, symbol_dict = state_dictionaries 
+    b = observation.board
+    l = observation.layers  
+    color_board = np.zeros(b.shape+(3,)).astype(float)
+    object_board = np.zeros(b.shape+(1,)).astype(int)
 
+    for symbol in l.keys():
+
+        # If alphabetic character
+        if symbol.isalpha():
+            # Paint the color board cells occupied accordingly
+            color_board[l[symbol]] = color_dict[symbol.lower()]
+
+            # Upper = box, lower = key
+            if symbol.isupper():
+                object_board[l[symbol]] = object_dict['box']
+            else:
+                object_board[l[symbol]] = object_dict['key']
+
+        else:
+            object_name = symbol_dict[symbol]
+
+            # Color assigned is [0,0,0] since it's not really a property of those objects
+            # Only agent and gem have colors mainly for plotting reasons
+            if object_name == 'agent':
+                color_board[l[symbol]] = color_dict['agent']
+            elif object_name == 'gem':
+                color_board[l[symbol]] = color_dict['gem']
+            else:
+                pass
+
+            object_board[l[symbol]] = object_dict[object_name]
+            
+    return (object_board, color_board)
+        
+
+def play_episode(agent, game, max_steps):
+    
+    # Define dictionaries to represent state from observation
+    color_dict = get_color_dict()
+    object_dict = {'ground':0, 'wall':1, 'agent':2, 'gem':3, 'key':4, 'box':5}
+    symbol_dict = {' ':'ground', '#':'wall', '.':'agent', '*':'gem'} # keys and boxes can have any possible letter
+    state_dictionaries = [color_dict, object_dict, symbol_dict]
+    
     # Start the episode
     observation, _, _ = game.its_showtime()
-    state = get_state(observation, mask)
+    state = get_state(observation, state_dictionaries)
     
     rewards = []
     log_probs = []
@@ -49,7 +92,7 @@ def play_episode(agent, game, max_steps, mask=True):
     states = [state]
     not_done = []
     bootstrap = []
-        
+
     steps = 0
     while True:
      
@@ -59,7 +102,7 @@ def play_episode(agent, game, max_steps, mask=True):
 
         if show:
             show_game_state(new_obs)
-        new_state = get_state(new_obs, mask)
+        new_state = get_state(new_obs, state_dictionaries)
         
         rewards.append(reward)
         log_probs.append(log_prob)
@@ -85,9 +128,9 @@ def play_episode(agent, game, max_steps, mask=True):
     done = ~np.array(not_done)
     bootstrap = np.array(bootstrap)
 
-    return rewards, log_probs, distributions, np.array(states), done, bootstrap
+    return rewards, log_probs, distributions, states, done, bootstrap
 
-def train_boxworld(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False, mask=True):
+def train_boxworld(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False):
     performance = []
     time_profile = []
     
@@ -96,7 +139,7 @@ def train_boxworld(agent, game_params, n_episodes = 1000, max_steps=120, return_
         #print("Playing episode %d... "%(e+1))
         t0 = time.time()
         game = bw.make_game(**game_params)
-        rewards, log_probs, distributions, states, done, bootstrap = play_episode(agent, game, max_steps, mask)
+        rewards, log_probs, distributions, states, done, bootstrap = play_episode(agent, game, max_steps)
         t1 = time.time()
         #print("Time playing the episode: %.2f s"%(t1-t0))
         performance.append(np.sum(rewards))

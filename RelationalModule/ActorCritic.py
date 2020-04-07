@@ -158,8 +158,9 @@ class BoxWorldA2C():
             Shape (episode_len, in_channels, lin_size, lin_size)
             Or    (in_channels, lin_size, lin_size)
         """
-        state = torch.from_numpy(state.astype(int)).to(self.device)
-        log_probs = self.actor(state)
+        x1 = torch.LongTensor(state[0]).to(self.device)
+        x2 = torch.tensor(state[1]).float().to(self.device)
+        log_probs = self.actor((x1, x2))
         return log_probs
     
     def update(self, *args):
@@ -186,18 +187,18 @@ class BoxWorldA2C():
             print("done.shape: (before n_steps)", done.shape)
             print("done: (before n_steps)", done)
         
-        old_states = torch.tensor(states[:-1].astype(int)).to(self.device)
+        x1 = torch.LongTensor([s[0] for s in states]).to(self.device)
+        x2 = torch.tensor([s[1] for s in states]).float().to(self.device)
+        
+        old_states = (x1[:-1], x2[:-1])
 
-        new_states, Gamma_V, done = self.compute_n_step_states(states, done)
-        new_states = torch.tensor(new_states.astype(int)).to(self.device)
+        new_states, Gamma_V, done = self.compute_n_step_states(x1, x2, done)
 
         if debug:
             print("done.shape: (after n_steps)", done.shape)
             print("Gamma_V.shape: ", Gamma_V.shape)
             print("done: (after n_steps)", done)
             print("Gamma_V: ", Gamma_V)
-            print("old_states.shape: ", old_states.shape)
-            print("new_states.shape: ", new_states.shape)
             
         ### Wrap variables into tensors ###
         
@@ -335,7 +336,7 @@ class BoxWorldA2C():
         
         return n_steps_r
     
-    def compute_n_step_states(self, states, done):
+    def compute_n_step_states(self, x1, x2, done):
         """
         Computes n-steps target states (to be used by the critic as target values together with the
         n-steps discounted reward). For last n-1 elements the target state is the last one available.
@@ -350,18 +351,18 @@ class BoxWorldA2C():
         
         # Compute indexes for (at most) n-step away states 
         
-        n_step_idx = np.arange(len(states)-1) + self.n_steps
-        diff = n_step_idx - len(states) + 1
+        n_step_idx = np.arange(len(x1)-1) + self.n_steps
+        diff = n_step_idx - len(x1) + 1
         mask = (diff > 0)
-        n_step_idx[mask] = len(states) - 1
+        n_step_idx[mask] = len(x1) - 1
         
         # Compute new states
         
-        new_states = states[n_step_idx]
+        new_states = (x1[n_step_idx], x2[n_step_idx])
         
         # Compute discount factors
         
-        pw = np.array([self.n_steps for _ in range(len(new_states))])
+        pw = np.array([self.n_steps for _ in range(len(new_states[0]))])
         pw[mask] = self.n_steps - diff[mask]
         Gamma_V = self.gamma**pw
         
