@@ -206,6 +206,10 @@ class BoxWorldA2C():
         log_probs = torch.stack(log_probs).to(self.device)
         if debug: print("log_probs: ", log_probs)
         distributions = torch.stack(distributions, axis=1).to(self.device)
+        # Regularize terms with 0 probability (if that happens)
+        mask = (distributions == 0).nonzero()
+        distributions[:,mask] = 1e-5
+        
         if debug: 
             print("distributions.shape: ", distributions.shape)
             print("distributions: ", distributions)
@@ -288,11 +292,11 @@ class BoxWorldA2C():
             print("A: ", A)
             print("policy_gradient.shape: ", policy_gradient.shape)
             print("policy_gradient: ", policy_gradient)
-        policy_grad = torch.sum(policy_gradient)
+        policy_grad = torch.mean(policy_gradient)
         if debug: print("policy_grad: ", policy_grad)
             
         # Compute negative entropy (no - in front)
-        entropy = self.H*torch.sum(distributions*torch.log(distributions)).sum()
+        entropy = self.H*torch.mean(distributions*torch.log(distributions))
         if debug: print("Negative entropy: ", entropy)
         
         loss = policy_grad + entropy

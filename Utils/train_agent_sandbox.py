@@ -69,7 +69,7 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
     for e in range(n_episodes):
         
         # Change game params
-        initial, goal = random_start(game_params["X"], game_params["Y"])
+        initial, goal = random_start(game_params["x"], game_params["y"])
 
         # All game parameters
         game_params["initial"] = initial

@@ -96,8 +96,8 @@ class Sandbox():
     
     def enc_to_grey(self):
         grey_img = np.full(self.boundary, BACKGROUND_COLOR)
-        grey_img[self.state[0],self.state[1]] = AGENT_COLOR
         grey_img[self.goal[0],self.goal[1]] = GOAL_COLOR
+        grey_img[self.state[0],self.state[1]] = AGENT_COLOR
         return np.array([grey_img])
     
     def reset(self, random_init=False):
