@@ -116,12 +116,11 @@ def get_state(observation):
 
 ###
 
-def render(agent=None, save=False, x=10, y=10, goal=[9,9], initial=[0,0]):
+def render(agent=None, env = None, save=False, x=10, y=10, goal=[9,9], initial=[0,0], greedy=True):
     fig = plt.figure(figsize = (8,6))
     # initialize environment
-    env = test_env.Sandbox(x, y, initial, goal, max_steps=50)
-    reward = 0
-
+    if env is None:
+        env = test_env.Sandbox(x, y, initial, goal, max_steps=50)
     # 
     rgb_map = np.full((x,y,3), [199,234,70])/255.
     rgb_map[goal[0],goal[1],:] = np.array([255,255,255])/255.
@@ -138,23 +137,26 @@ def render(agent=None, save=False, x=10, y=10, goal=[9,9], initial=[0,0]):
     # run episode
     state = env.reset()
     for step in range(0, env.max_steps):
-        state = np.array([state])
         if agent is None:
             action = env.get_optimal_action()
         else:
-            action, log_prob, _ = agent.get_action(state, return_log = True)
+            action, log_prob, probs = agent.get_action(state, return_log = True)
+            if greedy:
+                probs = probs.squeeze().detach().numpy()
+                action = np.argmax(probs)
+            
         new_state, reward, terminal, info = env.step(action) # gym standard step's output
 
         plt.cla() # clear current axis from previous drawings -> prevents matplotlib from slowing down
         rgb_map = np.full((x,y,3), [199,234,70])/255.
-        rgb_map[goal[0],goal[1],:] = np.array([255,255,255])/255.
+        rgb_map[env.goal[0],env.goal[1],:] = np.array([255,255,255])/255.
         rgb_map[env.state[0],env.state[1],:] = np.array([225,30,100])/255.
         plt.imshow(rgb_map)
         plt.title("Sandbox Env - Turn: %d "%(step+1))
         plt.yticks([]) # remove y ticks
         plt.xticks([]) # remove x ticks
         fig.canvas.draw() # update the figure
-        time.sleep(0.75) #uncomment to slow down for visualization purposes
+        time.sleep(0.5) #uncomment to slow down for visualization purposes
         if save:
             plt.savefig('.raw_gif/turn%.3d.png'%(step+1))
 

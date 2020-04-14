@@ -2,17 +2,21 @@ import numpy as np
 import time
 
 # same values as in BoxWorld
-AGENT_COLOR = 46
-GOAL_COLOR = 42
-BACKGROUND_COLOR = 32
+BACKGROUND_COLOR = 0
+AGENT_COLOR = 1
+GOAL_COLOR = 2
+WALL_COLOR = 3
 
 debug = False
 
 class Sandbox():
     
-    def __init__(self, x, y, initial, goal, R0=0, max_steps=0, greyscale_state=True):
+    def __init__(self, x, y, initial, goal, R0=0, max_steps=0, greyscale_state=True, return_coord=False, return_ohe=False):
         
         self.greyscale = greyscale_state
+        self.return_coord = return_coord
+        self.return_ohe = return_ohe
+        
         self.boundary = np.asarray([x, y])
         self.initial = np.asarray(initial)
         self.state = np.asarray(initial)
@@ -55,7 +59,8 @@ class Sandbox():
         
         if not (self.check_boundaries(next_state)):
             # Enforce staying within boundaries with negative reward
-            reward = -1
+            #reward = -1
+            pass
         else:
             # Update state only if valid movement
             self.state = next_state
@@ -71,9 +76,13 @@ class Sandbox():
         if self.current_steps == self.max_steps:
             terminal = True
             info['TimeLimit.truncated'] = True
-            
-        if self.greyscale:
+          
+        if self.return_coord:
+            enc_state = self.enc_to_coord()
+        elif self.greyscale:
             enc_state = self.enc_to_grey()
+            if self.return_ohe:
+                enc_state = self.grey_to_onehot(enc_state)
         else:
             enc_state = self.encode_state()
             
@@ -95,11 +104,36 @@ class Sandbox():
         return enc_state
     
     def enc_to_grey(self):
-        grey_img = np.full(self.boundary, BACKGROUND_COLOR)
-        grey_img[self.goal[0],self.goal[1]] = GOAL_COLOR
-        grey_img[self.state[0],self.state[1]] = AGENT_COLOR
+        grey_img = np.full((self.boundary[0]+2, self.boundary[1]+2), BACKGROUND_COLOR).astype(int)
+        grey_img[self.goal[0]+1,self.goal[1]+1] = GOAL_COLOR
+        grey_img[self.state[0]+1,self.state[1]+1] = AGENT_COLOR
+        grey_img[0,:] = WALL_COLOR
+        grey_img[-1,:] = WALL_COLOR
+        grey_img[:,0] = WALL_COLOR
+        grey_img[:,-1] = WALL_COLOR
         return np.array([grey_img])
     
+    def enc_to_coord(self):
+        x_agent = self.state[0]/self.boundary[0]
+        y_agent = self.state[1]/self.boundary[1]
+        x_goal = self.goal[0]/self.boundary[0]
+        y_goal = self.goal[1]/self.boundary[1]
+        near_boundary = 0.
+        if self.state[0] == 0 or self.state[0] == self.boundary[0]-1:
+            near_boundary = 1.
+        if self.state[1] == 0 or self.state[1] == self.boundary[1]-1:
+            near_boundary = 1.   
+
+        return np.array([x_agent, y_agent, x_goal, y_goal, near_boundary])
+    
+    def grey_to_onehot(self, grey_enc):
+        ohe_state = np.full((3,)+grey_enc.shape[1:], 0).astype(float)
+        colors = [AGENT_COLOR, GOAL_COLOR, WALL_COLOR]
+        for i, c in enumerate(colors):
+            mask = (grey_enc[0,:,:] == c)
+            ohe_state[i][mask] = 1.
+        return ohe_state
+        
     def reset(self, random_init=False):
         if random_init:
             self.initial[0] = np.random.choice(self.boundary[0]-1)
@@ -107,10 +141,15 @@ class Sandbox():
         self.state = self.initial
         self.current_steps = 0
         
-        if self.greyscale:
-            return self.enc_to_grey()
+        if self.return_coord:
+            enc_state = self.enc_to_coord()
+        elif self.greyscale:
+            enc_state = self.enc_to_grey()
+            if self.return_ohe:
+                enc_state = self.grey_to_onehot(enc_state)
         else:
-            return self.encode_state()
+            enc_state = self.encode_state()
+        return enc_state
     
     def dist_to_goal(self, state):
         dx = np.abs(state[0] - self.goal[0])

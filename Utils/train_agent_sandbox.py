@@ -59,8 +59,9 @@ def random_start(X=10, Y=10):
     goal = [s2//X, s2%X]
     return initial, goal
 
-def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False):
+def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_agent=False, random_init=True):
     performance = []
+    steps_to_solve = []
     time_profile = []
     critic_losses = [] 
     actor_losses = []
@@ -68,12 +69,13 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
     
     for e in range(n_episodes):
         
-        # Change game params
-        initial, goal = random_start(game_params["x"], game_params["y"])
+        if random_init:
+            # Change game params
+            initial, goal = random_start(game_params["x"], game_params["y"])
 
-        # All game parameters
-        game_params["initial"] = initial
-        game_params["goal"] = goal
+            # All game parameters
+            game_params["initial"] = initial
+            game_params["goal"] = goal
 
         #print("Playing episode %d... "%(e+1))
         t0 = time.time()
@@ -82,9 +84,10 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
         t1 = time.time()
         #print("Time playing the episode: %.2f s"%(t1-t0))
         performance.append(np.sum(rewards))
+        steps_to_solve.append(len(rewards))
         if (e+1)%10 == 0:
-            print("Episode %d - reward: %.2f"%(e+1, np.mean(performance[-10:])))
-        #print("Episode %d - reward: %.0f"%(e+1, performance[-1]))
+            print("Episode %d - reward: %.2f - steps to solve: %.2f"%(e+1, np.mean(performance[-10:]), np.mean(steps_to_solve[-10:])))
+        #print("Episode %d - reward: %.2f - steps to solve: %d"%(e+1, performance[-1], len(rewards)))
 
         critic_loss, actor_loss, entropy = agent.update(rewards, log_probs, distributions, states, done, bootstrap)
         critic_losses.append(critic_loss)
@@ -98,9 +101,10 @@ def train_sandbox(agent, game_params, n_episodes = 1000, max_steps=120, return_a
         
     performance = np.array(performance)
     time_profile = np.array(time_profile)
+    steps_to_solve = np.array(steps_to_solve)
     L = n_episodes // 6 # consider last sixth of episodes to compute agent's asymptotic performance
     losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
     if return_agent:
-        return performance, performance[-L:].mean(), performance[-L:].std(), agent, time_profile, losses
+        return performance, performance[-L:].mean(), performance[-L:].std(), agent, time_profile, losses, steps_to_solve
     else:
-        return performance, performance[-L:].mean(), performance[-L:].std(), losses
+        return performance, performance[-L:].mean(), performance[-L:].std(), losses, steps_to_solve
