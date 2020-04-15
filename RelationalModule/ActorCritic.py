@@ -142,7 +142,6 @@ class BoxWorldA2C():
         probs = Categorical(dist)
         action =  probs.sample().item()
         if return_log:
-            if debug: print("distribution: ", dist)
             return action, log_probs.view(-1)[action], dist
         else:
             return action
@@ -158,9 +157,8 @@ class BoxWorldA2C():
             Shape (episode_len, in_channels, lin_size, lin_size)
             Or    (in_channels, lin_size, lin_size)
         """
-        x1 = torch.LongTensor(state[0]).to(self.device)
-        x2 = torch.tensor(state[1]).float().to(self.device)
-        log_probs = self.actor((x1, x2))
+        state = torch.from_numpy(state).float().to(self.device)
+        log_probs = self.actor(state)
         return log_probs
     
     def update(self, *args):
@@ -187,18 +185,18 @@ class BoxWorldA2C():
             print("done.shape: (before n_steps)", done.shape)
             print("done: (before n_steps)", done)
         
-        x1 = torch.LongTensor([s[0] for s in states]).to(self.device)
-        x2 = torch.tensor([s[1] for s in states]).float().to(self.device)
-        
-        old_states = (x1[:-1], x2[:-1])
+        old_states = torch.tensor(states[:-1]).float().to(self.device)
 
-        new_states, Gamma_V, done = self.compute_n_step_states(x1, x2, done)
+        new_states, Gamma_V, done = self.compute_n_step_states(states, done)
+        new_states = torch.tensor(new_states).float().to(self.device)
 
         if debug:
             print("done.shape: (after n_steps)", done.shape)
             print("Gamma_V.shape: ", Gamma_V.shape)
             print("done: (after n_steps)", done)
             print("Gamma_V: ", Gamma_V)
+            print("old_states.shape: ", old_states.shape)
+            print("new_states.shape: ", new_states.shape)
             
         ### Wrap variables into tensors ###
         
@@ -206,14 +204,8 @@ class BoxWorldA2C():
         if debug: print("log_probs: ", log_probs)
         log_probs = torch.stack(log_probs).to(self.device)
         if debug: print("log_probs: ", log_probs)
-        distributions = torch.stack(distributions, axis=1).to(self.device)
-        # Regularize terms with 0 probability (if that happens)
-        mask = (distributions == 0).nonzero()
-        distributions[:,mask] = 1e-5
-        
-        if debug: 
-            print("distributions.shape: ", distributions.shape)
-            print("distributions: ", distributions)
+        distributions = torch.stack(distributions, axis=0).to(self.device)
+        if debug: print("distributions: ", distributions)
         n_step_rewards = torch.tensor(n_step_rewards).float().to(self.device)
         Gamma_V = torch.tensor(Gamma_V).float().to(self.device)
         
@@ -336,7 +328,7 @@ class BoxWorldA2C():
         
         return n_steps_r
     
-    def compute_n_step_states(self, x1, x2, done):
+    def compute_n_step_states(self, states, done):
         """
         Computes n-steps target states (to be used by the critic as target values together with the
         n-steps discounted reward). For last n-1 elements the target state is the last one available.
@@ -351,18 +343,18 @@ class BoxWorldA2C():
         
         # Compute indexes for (at most) n-step away states 
         
-        n_step_idx = np.arange(len(x1)-1) + self.n_steps
-        diff = n_step_idx - len(x1) + 1
+        n_step_idx = np.arange(len(states)-1) + self.n_steps
+        diff = n_step_idx - len(states) + 1
         mask = (diff > 0)
-        n_step_idx[mask] = len(x1) - 1
+        n_step_idx[mask] = len(states) - 1
         
         # Compute new states
         
-        new_states = (x1[n_step_idx], x2[n_step_idx])
+        new_states = states[n_step_idx]
         
         # Compute discount factors
         
-        pw = np.array([self.n_steps for _ in range(len(new_states[0]))])
+        pw = np.array([self.n_steps for _ in range(len(new_states))])
         pw[mask] = self.n_steps - diff[mask]
         Gamma_V = self.gamma**pw
         
@@ -373,8 +365,6 @@ class BoxWorldA2C():
         
         return new_states, Gamma_V, done
     
-    ### Not mantained at the moment ###
-
     def update_MC(self, rewards, log_probs, states, done, bootstrap=None):   
         print("states: ", states.shape)
         ### Compute MC discounted returns ###
