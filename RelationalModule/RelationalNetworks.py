@@ -44,6 +44,31 @@ class ExtractEntities(nn.Module):
             print("x.shape (ExtractEntities): ", x.shape)
         return x
 
+class Convolution(nn.Module):
+    def __init__(self, k_out, k_in=3, kernel_size=2, stride=1, padding=0):
+        super(Convolution, self).__init__()
+        assert k_out%2 == 0, "Please provide an even number of output kernels k_out"
+        layers = []
+        layers.append(nn.Conv2d(k_in, k_out//2, kernel_size, stride, padding))
+        layers.append(nn.ReLU())
+        layers.append(nn.Conv2d(k_out//2, k_out, kernel_size, stride, padding))
+        layers.append(nn.ReLU())
+        self.net = nn.Sequential(*layers)
+        
+    def forward(self, x):
+        """
+        Accepts an input of shape (batch_size, k_in, linear_size, linear_size)
+        Returns a tensor of shape (batch_size, 2*k_out, linear_size, linear_size)
+        """
+        if debug:
+            print("x.shape (before Convolution): ", x.shape)
+        if len(x.shape) <= 3:
+            x = x.unsqueeze(0)
+        x = self.net(x)
+        if debug:
+            print("x.shape (ExtractEntities): ", x.shape)
+        return x
+    
 class PositionalEncoding(nn.Module):
     """
     Adds two extra channels to the feature dimension, indicating the spatial 
@@ -145,7 +170,7 @@ def clones(module, N):
 
 class RelationalModule(nn.Module):
     """Implements the relational module from paper Relational Deep Reinforcement Learning"""
-    def __init__(self, n_kernels=24, n_features=256, n_heads=4, n_attn_modules=2):
+    def __init__(self, n_kernels=24, n_features=256, n_heads=4, n_attn_modules=2, n_hidden=64, dropout=0):
         """
         Parameters
         ----------
@@ -162,7 +187,7 @@ class RelationalModule(nn.Module):
         """
         super(RelationalModule, self).__init__()
         
-        enc_layer = AttentionBlock(n_features, n_heads, n_hidden=64, dropout=0.1)
+        enc_layer = AttentionBlock(n_features, n_heads, n_hidden=n_hidden, dropout=dropout)
         
         encoder_layers = clones(enc_layer, n_attn_modules)
         
@@ -225,7 +250,7 @@ class ResidualLayer(nn.Module):
         out = self.w2(out)
         return out + x
     
-class BoxWorldNet(nn.Module):
+class BoxWorldNet_v0(nn.Module):
     """
     Implements architecture for BoxWorld agent of the paper Relational Deep Reinforcement Learning.
     
@@ -263,7 +288,7 @@ class BoxWorldNet(nn.Module):
         n_linears: int (default 4)
             Number of fully-connected layers after the FeaturewiseMaxPool layer
         """
-        super(BoxWorldNet, self).__init__()
+        super(BoxWorldNet_v0, self).__init__()
         
         self.n_features = n_features
         
@@ -290,8 +315,73 @@ class BoxWorldNet(nn.Module):
         if debug:
             print("x.shape (BoxWorldNet): ", x.shape)
         return x
-           
+    
+    
+class BoxWorldNet(nn.Module):
+    """
+    Implements architecture for BoxWorld agent of the paper Relational Deep Reinforcement Learning.
+    
+    Architecture:
+    - 2 Convolutional layers (2x2 kernel size, stride 1, first with 12 out channels, second with 24)
+    - Positional Encoding layer (2 more channels encoding x,y pixels' positions) and then projecting the 26
+      channels to 256
+    - Relational module, with one or more attention blocks (MultiheadedAttention + PositionwiseFeedForward)
+    - FeaturewiseMaxPool layer
+    - Multi-layer Perceptron with some (defaul = 4) fully-connected layers
+    
+    """
+    def __init__(self, map_size, in_channels=3, n_kernels=24, n_features=32, n_heads=2, n_attn_modules=4, 
+                 relational_hidden_dim=32, residual_hidden_dim=64, n_residuals=4, max_pool=True):
+        """
+        Parameters
+        ----------
+        in_channels: int (default 1)
+            Number of channels of the input image (e.g. 3 for RGB)
+        n_kernels: int (default 24)
+            Number of features extracted for each pixel
+        vocab_size: int (default 117)
+            Range of integer values of the raw pixels
+        n_dim: int (default 3)
+            Embedding dimension for each pixel channel (1 channel for greyscale, 
+            3 for RGB)
+        n_features: int (default 256)
+            Number of linearly projected features after positional encoding.
+            This is the number of features used during the Multi-Headed Attention
+            (MHA) blocks
+        n_heads: int (default 4)
+            Number of heades in each MHA block
+        n_attn_modules: int (default 2)
+            Number of MHA blocks
+        n_linears: int (default 4)
+            Number of fully-connected layers after the FeaturewiseMaxPool layer
+        """
+        super(BoxWorldNet, self).__init__()
         
+        self.n_features = n_features
+        
+        MLP = clones(ResidualLayer(n_features, residual_hidden_dim), n_residuals)
+        
+        if max_pool:
+            self.net = nn.Sequential(
+                Convolution(k_out=n_kernels, k_in=in_channels),
+                RelationalModule(n_kernels, n_features, n_heads, n_attn_modules, n_hidden=relational_hidden_dim),
+                FeaturewiseMaxPool(pixel_axis = 0),
+                *MLP)
+        else:
+            self.net = nn.Sequential(
+                Convolution(k_out=n_kernels, k_in=in_channels),
+                RelationalModule(n_kernels, n_features, n_heads, n_attn_modules, n_hidden=relational_hidden_dim),
+                FeaturewiseProjection(int(map_size**2)),
+                *MLP)
+        
+        if debug:
+            print(self.net)
+        
+    def forward(self, state):
+        x = self.net(x)
+        if debug:
+            print("x.shape (BoxWorldNet): ", x.shape)
+        return x        
         
         
         
