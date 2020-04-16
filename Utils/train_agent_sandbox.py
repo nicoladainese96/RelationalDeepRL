@@ -3,7 +3,6 @@ import torch
 from RelationalModule import ActorCritic
 from Utils import test_env
 import time
-from importlib import reload
 
 debug = False
 

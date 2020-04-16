@@ -30,7 +30,7 @@ def load_session(load_dir, keywords):
     else:
         return matching_dicts
 
-def save_session(save_dir, keywords, game_params, HPs, score, steps=steps):
+def save_session(save_dir, keywords, game_params, HPs, score, steps):
     ID = ''.join([random.choice(string.ascii_letters) for _ in range(4)])
     ID = ID.upper()
     keywords.append(ID)

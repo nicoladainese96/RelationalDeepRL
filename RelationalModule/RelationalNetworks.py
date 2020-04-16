@@ -189,8 +189,8 @@ class RelationalModule(nn.Module):
         
         enc_layer = AttentionBlock(n_features, n_heads, n_hidden=n_hidden, dropout=dropout)
         
-        encoder_layers = clones(enc_layer, n_attn_modules)
-        
+        #encoder_layers = clones(enc_layer, n_attn_modules)
+        encoder_layers = nn.ModuleList([enc_layer for _ in range(n_attn_modules)])
         self.net = nn.Sequential(
             PositionalEncoding(n_kernels, n_features),
             *encoder_layers)
@@ -292,7 +292,8 @@ class BoxWorldNet_v0(nn.Module):
         
         self.n_features = n_features
         
-        MLP = clones(ResidualLayer(n_features, n_features), n_linears)
+        #MLP = clones(ResidualLayer(n_features, n_features), n_linears)
+        MLP = nn.ModuleList([ResidualLayer(n_features, n_features) for _ in range(n_linears)])
         self.process_input = ExtractEntities(n_kernels, in_channels, vocab_size, n_dim)
         
         if max_pool:
@@ -359,8 +360,9 @@ class BoxWorldNet(nn.Module):
         
         self.n_features = n_features
         
-        MLP = clones(ResidualLayer(n_features, feature_hidden_dim), feature_n_residuals)
-
+        #MLP = clones(ResidualLayer(n_features, feature_hidden_dim), feature_n_residuals)
+        MLP = nn.ModuleList([ResidualLayer(n_features, feature_hidden_dim) for _ in range(feature_n_residuals)])
+        
         self.net = nn.Sequential(
             Convolution(k_in=in_channels, k_out=n_kernels),
             RelationalModule(n_kernels, n_features, n_heads, n_attn_modules),
@@ -390,14 +392,16 @@ class OheNet(nn.Module):
         self.OHE_conv = Convolution(k_in=k_in, k_out=k_out)
         self.pos_enc = PositionalEncoding(n_kernels=k_out, n_features=n_features)
 
-        pixel_res_layer = ResidualLayer(map_size**2, pixel_hidden_dim)
-        pixel_res_layers = clones(pixel_res_layer, pixel_n_residuals)
+        #pixel_res_layer = ResidualLayer(map_size**2, pixel_hidden_dim)
+        #pixel_res_layers = clones(pixel_res_layer, pixel_n_residuals)
+        pixel_res_layers = nn.ModuleList([ResidualLayer(map_size**2, pixel_hidden_dim) for _ in range(pixel_n_residuals)])
         self.pixel_res_block = nn.Sequential(*pixel_res_layers)
 
         self.maxpool = FeaturewiseMaxPool(pixel_axis=2)
 
-        feature_res_layer = ResidualLayer(n_features, feature_hidden_dim)
-        feature_res_layers = clones(feature_res_layer, feature_n_residuals)
+        #feature_res_layer = ResidualLayer(n_features, feature_hidden_dim)
+        #feature_res_layers = clones(feature_res_layer, feature_n_residuals)
+        feature_res_layers = nn.ModuleList([ResidualLayer(n_features, feature_hidden_dim) for _ in range(feature_n_residuals)])
         self.feature_res_block = nn.Sequential(*feature_res_layers)
         
     def forward(self, x):

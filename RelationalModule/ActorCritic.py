@@ -205,6 +205,9 @@ class BoxWorldA2C():
         log_probs = torch.stack(log_probs).to(self.device)
         if debug: print("log_probs: ", log_probs)
         distributions = torch.stack(distributions, axis=0).to(self.device)
+        mask = (distributions == 0).nonzero()
+        distributions[mask[:,0], mask[:,1]] = 1e-5
+        
         if debug: print("distributions: ", distributions)
         n_step_rewards = torch.tensor(n_step_rewards).float().to(self.device)
         Gamma_V = torch.tensor(Gamma_V).float().to(self.device)
