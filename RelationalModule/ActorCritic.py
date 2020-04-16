@@ -106,7 +106,7 @@ class BoxWorldA2C():
             self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=lr)
             
         if critic_lr is not None:
-            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
+            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
         else:
             self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
         
