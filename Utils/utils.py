@@ -30,14 +30,14 @@ def load_session(load_dir, keywords):
     else:
         return matching_dicts
 
-def save_session(save_dir, keywords, game_params, HPs, score, steps):
+def save_session(save_dir, keywords, game_params, HPs, score, steps, losses):
     ID = ''.join([random.choice(string.ascii_letters) for _ in range(4)])
     ID = ID.upper()
     keywords.append(ID)
     filename = '_'.join(keywords)
     filename = 'S_'+filename
     print("Save at "+save_dir+filename)
-    train_session_dict = dict(game_params=game_params, HPs=HPs, score=score, steps=steps, n_epochs=len(score), keywords=keywords)
+    train_session_dict = dict(game_params=game_params, HPs=HPs, score=score, steps=steps, n_epochs=len(score), keywords=keywords, losses=losses)
     np.save(save_dir+filename, train_session_dict)
     return ID
 

@@ -29,7 +29,7 @@ class OheA2C():
     """ 
     
     def __init__(self, action_space, map_size, lr, gamma, TD=True, twin=False, tau = 1., 
-                 H=1e-2, n_steps = 1, device='cpu', actor_lr=None, critic_lr=None, **control_net_args):
+                 H=1e-2, n_steps = 1, device='cpu', actor_lr=None, critic_lr=None, radam=False, **control_net_args):
         """
         Parameters
         ----------
@@ -101,15 +101,21 @@ class OheA2C():
             for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
                 trg_params.data.copy_(params.data)
             
+        if radam:
+            self.optimizer = RAdam
+        else:
+            self.optimizer = torch.optim.Adam
+
+
         if actor_lr is not None:
-            self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
+            self.actor_optim = self.optimizer(self.actor.parameters(), lr=actor_lr)
         else:
-            self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=lr)
-            
+            self.actor_optim = self.optimizer(self.actor.parameters(), lr=lr)
+        
         if critic_lr is not None:
-            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
+            self.critic_optim = self.optimizer(self.critic.parameters(), lr=critic_lr)
         else:
-            self.critic_optim = torch.optim.Adam(self.critic.parameters(), lr=lr)
+            self.critic_optim = self.optimizer(self.critic.parameters(), lr=lr)
         
         self.device = device 
         self.actor.to(self.device) 
