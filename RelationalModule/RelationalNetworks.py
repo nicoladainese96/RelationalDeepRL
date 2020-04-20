@@ -392,15 +392,11 @@ class OheNet(nn.Module):
         self.OHE_conv = Convolution(k_in=k_in, k_out=k_out)
         self.pos_enc = PositionalEncoding(n_kernels=k_out, n_features=n_features)
 
-        #pixel_res_layer = ResidualLayer(map_size**2, pixel_hidden_dim)
-        #pixel_res_layers = clones(pixel_res_layer, pixel_n_residuals)
         pixel_res_layers = nn.ModuleList([ResidualLayer(map_size**2, pixel_hidden_dim) for _ in range(pixel_n_residuals)])
         self.pixel_res_block = nn.Sequential(*pixel_res_layers)
 
         self.maxpool = FeaturewiseMaxPool(pixel_axis=2)
 
-        #feature_res_layer = ResidualLayer(n_features, feature_hidden_dim)
-        #feature_res_layers = clones(feature_res_layer, feature_n_residuals)
         feature_res_layers = nn.ModuleList([ResidualLayer(n_features, feature_hidden_dim) for _ in range(feature_n_residuals)])
         self.feature_res_block = nn.Sequential(*feature_res_layers)
         

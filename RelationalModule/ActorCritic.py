@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 from RelationalModule.AC_networks import BoxWorldActor, BoxWorldCritic #custom module
+from RelationalModule.RAdam import RAdam
 
 debug = False
 

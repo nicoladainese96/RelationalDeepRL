@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 from RelationalModule.AC_networks import OheActor, OheCritic #custom module
+from RelationalModule.RAdam import RAdam
 
 debug = False
 

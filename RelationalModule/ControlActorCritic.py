@@ -1,3 +1,5 @@
+#### 20/04 - Obsolete actor-critic -> use OheNet instead ####
+
 import numpy as np
 import torch
 import torch.nn as nn
