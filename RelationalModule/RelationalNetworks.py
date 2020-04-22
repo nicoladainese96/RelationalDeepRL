@@ -423,5 +423,170 @@ class OheNet(nn.Module):
         
         return x     
         
+
+### GatedTransformer for the attention/relational block ###
+
+class GRU_gating(nn.Module):
+    def __init__(self, n_features):
+        super(GRU_gating, self).__init__()
+        self.Wr = nn.Linear(n_features*2, n_features, bias=False)
+        self.Wz = nn.Linear(n_features*2, n_features, bias=True)
+        self.Wg = nn.Linear(n_features*2, n_features, bias=False)
         
+    def forward(self, x, y):
+        xy = torch.cat([x, y], axis=-1)
+        if debug: print("xy.shape: ", xy.shape)
+            
+        r = torch.sigmoid(self.Wr(xy))
+        if debug: print("r.shape: ", r.shape)
+            
+        z = torch.sigmoid(self.Wz(xy))
+        if debug: print("z.shape: ", z.shape)
+            
+        rx = r*x
+        if debug: print("rx.shape: ", rx.shape)
+            
+        h = torch.tanh(self.Wg(torch.cat([rx, y], axis=-1)))
+        if debug: print("h.shape: ", h.shape)
+            
+        g = (1-z)*x + z*h
+        if debug: print("g.shape: ", g.shape)
+            
+        return g       
+
+class GatedTransformerBlock(nn.Module):
+    def __init__(self, n_features, n_heads, n_hidden=64, dropout=0.1):
+        """
+        Args:
+          n_features: Number of input and output features. (d_model)
+          n_heads: Number of attention heads in the Multi-Head Attention.
+          n_hidden: Number of hidden units in the Feedforward (MLP) block. (d_k)
+          dropout: Dropout rate after the first layer of the MLP and the two skip connections.
+        """
+        super(GatedTransformerBlock, self).__init__()
+        self.norm = nn.LayerNorm(n_features)
+        self.dropout = nn.Dropout(dropout)
+        self.attn = nn.MultiheadAttention(n_features, n_heads, dropout)
+        self.GRU_gate1 = GRU_gating(n_features)
+        self.ff = PositionwiseFeedForward(n_features, n_hidden, dropout)
+        self.GRU_gate2 = GRU_gating(n_features)
         
+    def forward(self, x, mask=None):
+        """
+        Args:
+          x of shape (n_pixels**2, batch_size, n_features): Input sequences.
+          mask of shape (batch_size, max_seq_length): Boolean tensor indicating which elements of the input
+              sequences should be ignored.
+        
+        Returns:
+          z of shape (max_seq_length, batch_size, n_features): Encoded input sequence.
+
+        Note: All intermediate signals should be of shape (n_pixels**2, batch_size, n_features).
+        """
+        
+        # First submodule
+        x_norm = self.norm(x) # LayerNorm to the input before entering submodule
+        attn_output, attn_output_weights = self.attn(x_norm, x_norm, x_norm, key_padding_mask=mask) # MHA step
+        x = self.dropout(self.GRU_gate1(x, attn_output)) # skip connection added
+        
+        # Second submodule
+        x_norm = self.norm(x) # LayerNorm to the input before entering submodule
+        z = self.ff(x_norm) # FF step
+        return self.dropout(self.GRU_gate2(x, z)) # skip connection added
+
+class GatedRelationalModule(nn.Module):
+    """Implements the relational module from paper Relational Deep Reinforcement Learning"""
+    def __init__(self, n_kernels=24, n_features=256, n_heads=4, n_attn_modules=2, n_hidden=64, dropout=0):
+        """
+        Parameters
+        ----------
+        n_kernels: int (default 24)
+            Number of features extracted for each pixel
+        n_features: int (default 256)
+            Number of linearly projected features after positional encoding.
+            This is the number of features used during the Multi-Headed Attention
+            (MHA) blocks
+        n_heads: int (default 4)
+            Number of heades in each MHA block
+        n_attn_modules: int (default 2)
+            Number of MHA blocks
+        """
+        super(GatedRelationalModule, self).__init__()
+        
+        enc_layer = GatedTransformerBlock(n_features, n_heads, n_hidden=n_hidden, dropout=dropout)
+        
+        #encoder_layers = clones(enc_layer, n_attn_modules)
+        encoder_layers = nn.ModuleList([enc_layer for _ in range(n_attn_modules)])
+        self.net = nn.Sequential(
+            PositionalEncoding(n_kernels, n_features),
+            *encoder_layers)
+        
+        #if debug:
+        #    print(self.net)
+        
+    def forward(self, x):
+        """Expects an input of shape (batch_size, n_pixels, n_kernels)"""
+        x = self.net(x)
+        if debug:
+            print("x.shape (RelationalModule): ", x.shape)
+        return x
+    
+class GatedBoxWorldNet(nn.Module):
+    """
+    Implements architecture for BoxWorld agent of the paper Relational Deep Reinforcement Learning.
+    
+    Architecture:
+    - 2 Convolutional layers (2x2 kernel size, stride 1, first with 12 out channels, second with 24)
+    - Positional Encoding layer (2 more channels encoding x,y pixels' positions) and then projecting the 26
+      channels to 256
+    - Relational module, with one or more attention blocks (MultiheadedAttention + PositionwiseFeedForward)
+    - FeaturewiseMaxPool layer
+    - Multi-layer Perceptron with some (defaul = 4) fully-connected layers
+    
+    """
+    def __init__(self, in_channels=3, n_kernels=24, n_features=32, n_heads=2, 
+                 n_attn_modules=4, feature_hidden_dim=64, feature_n_residuals=4):
+        """
+        Parameters
+        ----------
+        in_channels: int (default 1)
+            Number of channels of the input image (e.g. 3 for RGB)
+        n_kernels: int (default 24)
+            Number of features extracted for each pixel
+        vocab_size: int (default 117)
+            Range of integer values of the raw pixels
+        n_dim: int (default 3)
+            Embedding dimension for each pixel channel (1 channel for greyscale, 
+            3 for RGB)
+        n_features: int (default 256)
+            Number of linearly projected features after positional encoding.
+            This is the number of features used during the Multi-Headed Attention
+            (MHA) blocks
+        n_heads: int (default 4)
+            Number of heades in each MHA block
+        n_attn_modules: int (default 2)
+            Number of MHA blocks
+        n_linears: int (default 4)
+            Number of fully-connected layers after the FeaturewiseMaxPool layer
+        """
+        super(GatedBoxWorldNet, self).__init__()
+        
+        self.n_features = n_features
+
+        MLP = nn.ModuleList([ResidualLayer(n_features, feature_hidden_dim) for _ in range(feature_n_residuals)])
+        
+        self.net = nn.Sequential(
+            Convolution(k_in=in_channels, k_out=n_kernels),
+            GatedRelationalModule(n_kernels, n_features, n_heads, n_attn_modules),
+            FeaturewiseMaxPool(pixel_axis = 0),
+            *MLP)
+
+        
+        if debug:
+            print(self.net)
+        
+    def forward(self, x):
+        x = self.net(x)
+        if debug:
+            print("x.shape (BoxWorldNet): ", x.shape)
+        return x
