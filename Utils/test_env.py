@@ -1,7 +1,6 @@
 import numpy as np
 import time
 
-# same values as in BoxWorld
 BACKGROUND_COLOR = 0
 AGENT_COLOR = 1
 GOAL_COLOR = 2
@@ -157,6 +156,8 @@ class Sandbox():
         return dx + dy
     
     def get_optimal_action(self):
+        if debug:
+            print("self.state: ", self.state)
         optimal = np.zeros(self.n_actions)
         d0 = self.dist_to_goal(self.state)
         # consider all actions
@@ -177,6 +178,9 @@ class Sandbox():
                 optimal[action] = 0.
         # once we have the vector of optimal, divide them by the sum
         probs = optimal/optimal.sum()
+        if debug: 
+            print("optimal: ", optimal)
+            print("probs: ", probs)
         # finally sample the action and return it together with the log of the probability
         opt_action = np.random.choice(self.n_actions, p=probs)
         return opt_action
