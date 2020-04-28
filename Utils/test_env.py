@@ -155,7 +155,7 @@ class Sandbox():
         dy = np.abs(state[1] - self.goal[1])
         return dx + dy
     
-    def get_optimal_action(self):
+    def get_optimal_action(self, show_all=False):
         if debug:
             print("self.state: ", self.state)
         optimal = np.zeros(self.n_actions)
@@ -183,6 +183,24 @@ class Sandbox():
             print("probs: ", probs)
         # finally sample the action and return it together with the log of the probability
         opt_action = np.random.choice(self.n_actions, p=probs)
-        return opt_action
+        if show_all:
+            return opt_action, optimal
+        else:
+            return opt_action
     
-    
+    def __str__(self):
+        print("Use greyscale state: ", self.greyscale)
+        print("Use coordinate state: ", self.return_coord)
+        print("Use one hot encoding state: ", self.return_ohe)
+        print("Boundary: ", self.boundary)
+        print("Initial position: ", self.initial)
+        print("Current position: ", self.state)
+        print("Goal position: ", self.goal)
+        
+        opt_action, optimal = self.get_optimal_action(show_all=True)
+        print("Optimal actions: ")
+        for i in range(self.n_actions):
+            if optimal[i] == 1:
+                print('\t'+self.action_dict[i])
+        print("Greyscale representation: \n", self.enc_to_grey())
+        return ''

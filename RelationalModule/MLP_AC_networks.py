@@ -43,7 +43,7 @@ class Actor(nn.Module):
             layers.append(nn.ReLU())
         
         layers.append(nn.Linear(hiddens[-1], action_space))
-        layers.append(nn.LogSoftmax(dim=1))  
+        layers.append(nn.LogSoftmax(dim=-1))  
         self.net = nn.Sequential(*layers)
         
     def forward(self, state):
