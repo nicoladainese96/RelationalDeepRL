@@ -184,7 +184,7 @@ class Sandbox():
         # finally sample the action and return it together with the log of the probability
         opt_action = np.random.choice(self.n_actions, p=probs)
         if show_all:
-            return opt_action, optimal
+            return opt_action, probs
         else:
             return opt_action
     

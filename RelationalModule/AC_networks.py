@@ -132,7 +132,77 @@ class GatedBoxWorldCritic(nn.Module):
             
         return v
         
+### Multiplicative agent ###
+
+class MultiplicativeActor(nn.Module):
+    def __init__(self, action_space, linear_size, **net_args):
+        """
+        Parameters
+        ----------
+        action_space: int
+            Number of (discrete) possible actions to take
+        """
+        super(MultiplicativeActor, self).__init__()
+        self.net = rnet.MultiplicativeConvNet(linear_size, **net_args)
+        self.linear = nn.Linear(self.net.n_features, action_space)
         
+    def forward(self, state):
+        out = self.net(state)
+        log_probs = F.log_softmax(self.linear(out), dim=1)
+        return log_probs
+
+class MultiplicativeBasicCritic(nn.Module):
+    """
+    Use BoxWorldNet followed by a linear layer with a scalar output without
+    activation function.
+    """
+    
+    def __init__(self, **net_args):
+        """
+        Parameters
+        ----------
+        **box_net_args: dict (optional)
+            Dictionary of {'key':value} pairs valid for BoxWorldNet
+        """
+        super(MultiplicativeBasicCritic, self).__init__()
+        self.net = rnet.MultiplicativeConvNet(linear_size, **net_args)
+        self.linear = nn.Linear(self.net.n_features, 1)
+    
+    def forward(self, state):
+        out = self.net(state)
+        V = self.linear(out)
+        return V
+    
+class MultiplicativeCritic(nn.Module):
+    """
+    Implements a generic critic for BoxWorld environment, 
+    that can have 2 independent networks is twin=True. 
+    """
+    def __init__(self, linear_size, twin=True, target=False, **net_args):
+
+        super(MultiplicativeCritic, self).__init__()
+        
+        self.twin = twin
+        self.target = target
+        
+        if twin:
+            self.net1 = MultiplicativeBasicCritic(linear_size, **net_args)
+            self.net2 = MultiplicativeBasicCritic(linear_size, **net_args)
+        else:
+            self.net = MultiplicativeBasicCritic(linear_size, **net_args)
+        
+    def forward(self, state):
+        if self.twin:
+            v1 = self.net1(state)
+            v2 = self.net2(state)
+            if self.target:
+                v = torch.min(v1, v2) 
+            else:
+                return v1, v2
+        else:
+            v = self.net(state)
+        
+        return v
 
 ### Control agent ###
 

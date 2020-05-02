@@ -10,18 +10,39 @@ from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 
 from Utils import test_env
 
-def play_optimal(env):
+def supervised_training(net, lr, n_epochs, n_samples, game_params, get_probs=False):
+    env = test_env.Sandbox(**game_params)
+    print("\nCreating dataset...")
+    state_set, action_set = create_action_state_set(game_params, size=n_samples, get_probs=get_probs)
+    train_loader, val_loader, test_loader = prepare_dataset(state_set, action_set, 0.8, 0.2)
+    dataloader_dict = dict(train_loader=train_loader,
+                           val_loader=val_loader,
+                           test_loader=test_loader)
+    print("\nTraining network...")
+    net, train_loss, val_loss = train_NN(net, lr, n_epochs, train_loader, val_loader, 
+                                         return_model=True, KL_loss=get_probs)
+    
+    return net, train_loss, val_loss, dataloader_dict, state_set, action_set, env
+
+def play_optimal(env, get_probs=False):
     """
     Play optimal policy with maximum entropy (equal probability allocation to all optimal choices).
     """
     state = env.reset(random_init = False)
     
-    actions = []
+    if get_probs:
+        probabilities = []
+    else:
+        actions = []
     states = []
 
     while True:
-        action = env.get_optimal_action()
-        actions.append(action)
+        if get_probs:
+            action, probs = env.get_optimal_action(show_all=get_probs)
+            probabilities.append(probs)
+        else:
+            action = env.get_optimal_action()
+            actions.append(action)
         
         new_state, reward, terminal, info = env.step(action) 
         states.append(new_state)
@@ -31,7 +52,10 @@ def play_optimal(env):
             
         state = new_state
     
-    return actions, states
+    if get_probs:
+        return probabilities, states
+    else:
+        return actions, states
 
 def random_start(X=10, Y=10):
     s1, s2 = np.random.choice(X*Y, 2, replace=False)
@@ -39,7 +63,7 @@ def random_start(X=10, Y=10):
     goal = [s2//X, s2%X]
     return initial, goal
 
-def create_action_state_set(game_params, size = 10000):
+def create_action_state_set(game_params, size = 10000, get_probs=False):
     action_memory = []
     state_memory = []
     
@@ -54,7 +78,7 @@ def create_action_state_set(game_params, size = 10000):
 
         env = test_env.Sandbox(**game_params)
         
-        actions, states = play_optimal(env)
+        actions, states = play_optimal(env, get_probs)
         action_memory += actions
         state_memory += states
         
@@ -118,7 +142,7 @@ def prepare_dataset(x, y, train_perc, val_perc, train_batch_size=128, val_batch_
 
     return train_loader, val_loader, test_loader
 
-def test_epoch(net, dataloader, loss_fn, optimizer):
+def test_epoch(net, dataloader, loss_fn, optimizer, KL_loss):
 
     # select device
     if torch.cuda.is_available():
@@ -137,7 +161,11 @@ def test_epoch(net, dataloader, loss_fn, optimizer):
             x = torch.tensor(x).float().to(device)
             
             y =  [x[1] for x in data]
-            y = torch.LongTensor(y).to(device)
+            
+            if KL_loss:
+                y = torch.tensor(y).float().to(device)
+            else:
+                y = torch.LongTensor(y).to(device)
 
             y_pred = net(x)
 
@@ -152,7 +180,7 @@ def test_epoch(net, dataloader, loss_fn, optimizer):
     return val_loss
 
 def train_NN(net, lr, n_epochs, train_loader, val_loader, train_log=True, verbose=True, 
-                  debug=False, return_model = False):
+                  debug=False, return_model = False, KL_loss=False):
     """
     Trains a Pytorch network.
     
@@ -188,8 +216,11 @@ def train_NN(net, lr, n_epochs, train_loader, val_loader, train_log=True, verbos
     
     """
   
-    optimizer = optim.Adamax(net.parameters(), lr)
-    loss_fn = nn.NLLLoss()
+    optimizer = optim.Adamax(net.parameters(), lr, weight_decay=1e-5)
+    if KL_loss:
+        loss_fn = nn.KLDivLoss()
+    else:
+        loss_fn = nn.NLLLoss()
     
     # define contextual print functions activated by print flags
     verbose_print = print if verbose else lambda *a, **k: None
@@ -231,7 +262,10 @@ def train_NN(net, lr, n_epochs, train_loader, val_loader, train_log=True, verbos
             x = torch.tensor(x).float().to(device)
             
             y =  [x[1] for x in data]
-            y = torch.LongTensor(y).to(device)
+            if KL_loss:
+                y = torch.tensor(y).float().to(device)
+            else:
+                y = torch.LongTensor(y).to(device)
 
             y_pred = net(x)
 
@@ -257,7 +291,7 @@ def train_NN(net, lr, n_epochs, train_loader, val_loader, train_log=True, verbos
         
         
         #At the end of the epoch, do a pass on the validation set
-        val_loss = test_epoch(net, dataloader=val_loader, loss_fn=loss_fn, optimizer=optimizer) 
+        val_loss = test_epoch(net, dataloader=val_loader, loss_fn=loss_fn, optimizer=optimizer, KL_loss=KL_loss) 
         if (train_log == True):
             val_loss_log.append(val_loss)
             verbose_print("Val. loss: {:.4f}".format(val_loss ))
@@ -269,7 +303,52 @@ def train_NN(net, lr, n_epochs, train_loader, val_loader, train_log=True, verbos
         else:
             return train_loss_log, val_loss_log#, val_acc_log  #used during cross validation
         
-        
+def plot_decision_map(env, net, goal, coord=True):
+    env.goal = goal
+    
+    if torch.cuda.is_available():
+        device = 'cuda'
+    else:
+        device = 'cpu'
+
+    probabilities = []
+    for x in range(env.boundary[0]):
+        for y in range(env.boundary[1]):
+            if [x,y] != goal:
+                env.state = [x,y]
+                if coord:
+                    enc_state = env.enc_to_coord()
+                else:
+                    grey_state = env.enc_to_grey()
+                    enc_state = env.grey_to_onehot(grey_state)
+                enc_state = torch.tensor(enc_state).float().to(device).unsqueeze(0)
+                #print("enc_state.shape: ", enc_state.shape)
+                log_probs = net(enc_state).squeeze()
+                probs = torch.exp(log_probs).cpu().detach().numpy()
+                
+            else:
+                probs = np.zeros(env.n_actions)
+            probabilities.append(probs)
+            
+    probs = np.array(probabilities).reshape((env.boundary[0],env.boundary[1],-1))
+    
+    fig = plt.figure(figsize=(8,8))
+    fig.suptitle('Goal in [%d,%d]'%(goal[0],goal[1]), fontsize=18, y=1, x=0.48)
+    ax1 = plt.subplot(2,2,1)
+    ax2 = plt.subplot(2,2,2)
+    ax3 = plt.subplot(2,2,3)
+    ax4 = plt.subplot(2,2,4)
+    axes = [ax1, ax2, ax3, ax4]
+    for i, ax in enumerate(axes):
+        im = ax.imshow(probs[:,:,i], cmap='plasma', vmin=0, vmax=1)
+        ax.set_title("Prob of moving "+env.action_dict[i], fontsize=16)
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        fig.colorbar(im, ax=ax, shrink=0.77)
+    plt.tight_layout()
+    
+    return probs
+
 def plot_results(train_loss, val_loss):
     n_epochs = np.arange(1,len(train_loss)+1)
     plt.figure(figsize=(8,6))

@@ -250,6 +250,165 @@ class ResidualLayer(nn.Module):
         out = self.w2(out)
         return out + x
     
+class MultiplicativeLayer(nn.Module):
+    def __init__(self, n_channels, info_channels, mask_channels, out_channels):
+        super(MultiplicativeLayer, self).__init__()
+        self.mask_channels = mask_channels
+        
+        self.info_linear = nn.Conv2d(n_channels, info_channels, kernel_size=1)
+        self.mask_linear = nn.Conv2d(n_channels, mask_channels, kernel_size=1)
+        self.conv1by1 = nn.Conv2d(info_channels*mask_channels, out_channels, kernel_size=1)
+        
+    def forward(self, x):
+        info_layers = F.relu(self.info_linear(x))
+        #mask_layers = torch.tanh(self.mask_linear(x)) 
+        mask_layers = torch.sigmoid(self.mask_linear(x)) 
+        out = []
+        for m in range(self.mask_channels):
+            out.append(info_layers*mask_layers[:,m,...].unsqueeze(1))
+        out = torch.cat(out, axis=1)
+        out = F.relu(self.conv1by1(out))
+        return out
+    
+class PosEncoding(nn.Module):
+
+    def __init__(self):
+        super(PosEncoding, self).__init__()
+
+    def forward(self, x):
+        """
+        Accepts an input of shape (batch_size, linear_size, linear_size, n_channels)
+        """
+        x_ax = x.shape[-2]
+        y_ax = x.shape[-1]
+        
+        x_lin = torch.linspace(-1,1,x_ax)
+        xx = x_lin.repeat(x.shape[0],y_ax,1).view(-1, 1, y_ax, x_ax).transpose(3,2)
+        
+        y_lin = torch.linspace(-1,1,y_ax).view(-1,1)
+        yy = y_lin.repeat(x.shape[0],1,x_ax).view(-1, 1, y_ax, x_ax).transpose(3,2)
+        
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+    
+        x = torch.cat((x,xx.to(device),yy.to(device)), axis=1)
+        return x
+
+class MultiplicativeNet(nn.Module):
+    def __init__(self, in_channels=3, info_channels=2, mask_channels=2):
+        super(MultiplicativeNet, self).__init__()
+        
+        out_channels = info_channels*mask_channels
+        self.out_channels = out_channels
+        
+        self.pos_enc = PosEncoding()
+        self.multi_layer = MultiplicativeLayer(in_channels+2, info_channels, mask_channels)
+        self.MLP = nn.Sequential(
+                                nn.Linear(out_channels, out_channels),
+                                nn.ReLU(),
+                                nn.Linear(out_channels, out_channels),
+                                nn.ReLU(),
+                                nn.Linear(out_channels, out_channels),
+                                nn.Sigmoid()
+                                )
+        
+    def forward(self, x):
+        if len(x.shape) < 4:
+            x = x.unsqueeze(0)
+        x = self.pos_enc(x)
+        if debug: print("x.shape (pos enc): ", x.shape)
+        
+        #x = x.permute(0,2,3,1)
+        #if debug: print("x.shape (permutation): ", x.shape)
+            
+        x = self.multi_layer(x)
+        if debug: print("x.shape (multi layer): ", x.shape)
+        
+        x = x.reshape((x.shape[0], x.shape[1], -1))
+        if debug: print("x.shape (after rehsape): ", x.shape)
+        
+        x, _ = torch.max(x, axis=-1)
+        if debug: print("x.shape (after max): ", x.shape)
+        
+        x = self.MLP(x)
+        if debug: print("x.shape (after MLP): ", x.shape)
+            
+        return x
+
+class MultiplicativeBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, info_channels=None, mask_channels=None,
+                    hidden_channels=None, kernel_size=3, stride=1, padding=0):
+        super(MultiplicativeBlock, self).__init__()
+        
+        # Set adaptive parameters for multiplicative layer
+        if info_channels is None:
+            info_channels = in_channels
+        if mask_channels is None:
+            mask_channels = in_channels
+        if hidden_channels is None:
+            hidden_channels = 2*in_channels
+            
+        self.net = nn.Sequential( 
+                     MultiplicativeLayer(in_channels, info_channels, mask_channels, hidden_channels),
+                     nn.Conv2d(hidden_channels, out_channels, kernel_size, stride, padding),
+                     nn.ReLU()  )
+        
+    def forward(self, x):
+        x = self.net(x)
+        return x
+
+    debug=True
+
+class MultiplicativeConvNet(nn.Module):
+    
+    def __init__(self, linear_size, in_channels=3, info_channels=6, mask_channels=4, hidden_channels=12, out_channels=[12,24], 
+                 max_pool_size=2, n_features=64, residual_hidden_dim=64, n_residual_layers=2):
+        
+        super(MultiplicativeConvNet, self).__init__()
+
+        n_multi_blocks = len(out_channels)
+        self.out_channels = out_channels[-1]
+        self.out_size = self.compute_out_size(linear_size, n_multi_blocks, max_pool_size)
+        self.n_features = n_features
+        if debug:
+            print("Out channels after forward1: ", self.out_channels)
+            print("Linear size after forward1: ", self.out_size)
+            
+        multi_blocks = nn.ModuleList(
+            [MultiplicativeBlock(in_channels+2, out_channels[0], info_channels, mask_channels, hidden_channels)]+
+            [MultiplicativeBlock(out_channels[i], out_channels[i+1], info_channels, mask_channels, hidden_channels) 
+             for i in range(n_multi_blocks-1)])
+        self.forward1 = nn.Sequential( PosEncoding(), *multi_blocks)
+        self.maxpool = nn.MaxPool2d(max_pool_size)
+
+        residual_MLP = nn.ModuleList([ResidualLayer(n_features, residual_hidden_dim)
+                                      for _ in range(n_residual_layers)])
+        self.forward2 = nn.Sequential(nn.Linear(self.out_channels*self.out_size**2, n_features), *residual_MLP)
+    
+    def forward(self, x):
+        if len(x.shape) < 4:
+            x = x.unsqueeze(0)
+        x = self.forward1(x)
+        if debug: print("x.shape (after forward1): ", x.shape)
+            
+        x = self.maxpool(x)
+        if debug: print("x.shape (after maxpool): ", x.shape)
+            
+        x = x.reshape((x.shape[0],-1))
+        if debug: print("x.shape (after rehsape): ", x.shape)
+        
+        x = self.forward2(x)
+        if debug: print("x.shape (after residual MLP): ", x.shape)
+            
+        return x
+    
+    @staticmethod
+    def compute_out_size(linear_size, n_multi_blocks, max_pool_size):
+        size = (linear_size - 2*n_multi_blocks) // max_pool_size
+        return size
+    
 class BoxWorldNet_v0(nn.Module):
     """
     Implements architecture for BoxWorld agent of the paper Relational Deep Reinforcement Learning.
