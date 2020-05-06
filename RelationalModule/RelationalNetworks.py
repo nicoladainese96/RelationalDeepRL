@@ -250,6 +250,28 @@ class ResidualLayer(nn.Module):
         out = self.w2(out)
         return out + x
     
+    
+class ResidualConvolutional(nn.Module):
+    
+    def __init__(self, linear_size, n_channels, hidden_channels=12, kernel_size=3):
+        super(ResidualConvolutional, self).__init__()
+        
+        padding = (kernel_size - 1) // 2
+        assert (kernel_size - 1) % 2 == 0, 'Provide odd kernel size to use this layer'
+        
+        self.net = nn.Sequential(
+                                nn.LayerNorm((linear_size, linear_size)),
+                                nn.Conv2d(n_channels, hidden_channels, kernel_size, stride=1, padding=padding),
+                                nn.ReLU(),
+                                nn.Conv2d(hidden_channels, n_channels, kernel_size, stride=1, padding=padding)
+                                )
+        
+    def forward(self, x):
+        out = self.net(x)
+        out = out + x
+        return out
+    
+    
 class MultiplicativeLayer(nn.Module):
     def __init__(self, n_channels, info_channels, mask_channels, out_channels):
         super(MultiplicativeLayer, self).__init__()
@@ -263,6 +285,27 @@ class MultiplicativeLayer(nn.Module):
         info_layers = F.relu(self.info_linear(x))
         #mask_layers = torch.tanh(self.mask_linear(x)) 
         mask_layers = torch.sigmoid(self.mask_linear(x)) 
+        out = []
+        for m in range(self.mask_channels):
+            out.append(info_layers*mask_layers[:,m,...].unsqueeze(1))
+        out = torch.cat(out, axis=1)
+        out = F.relu(self.conv1by1(out))
+        return out
+    
+class MultiplicativeLayer_v1(nn.Module):
+    def __init__(self, n_channels, info_channels, mask_channels, out_channels):
+        super(MultiplicativeLayer_v1, self).__init__()
+        self.mask_channels = mask_channels
+        
+        self.info_linear1by1 = nn.Conv2d(n_channels, info_channels, kernel_size=1)
+        self.mask_linear1by1 = nn.Conv2d(n_channels, mask_channels, kernel_size=1)
+        self.info_linear3by3 = nn.Conv2d(n_channels, info_channels, kernel_size=3, padding=1)
+        self.mask_linear3by3 = nn.Conv2d(n_channels, mask_channels, kernel_size=3, padding=1)
+        self.conv1by1 = nn.Conv2d(info_channels*mask_channels, out_channels, kernel_size=1)
+        
+    def forward(self, x):
+        info_layers = F.relu(self.info_linear1by1(x) + self.info_linear3by3(x))
+        mask_layers = torch.sigmoid(self.mask_linear1by1(x)+self.mask_linear3by3(x)) 
         out = []
         for m in range(self.mask_channels):
             out.append(info_layers*mask_layers[:,m,...].unsqueeze(1))
@@ -339,7 +382,7 @@ class MultiplicativeNet(nn.Module):
 
 class MultiplicativeBlock(nn.Module):
     def __init__(self, in_channels, out_channels, info_channels=None, mask_channels=None,
-                    hidden_channels=None, kernel_size=3, stride=1, padding=0):
+                    hidden_channels=None, kernel_size=3, stride=1, padding=0, version='v1'):
         super(MultiplicativeBlock, self).__init__()
         
         # Set adaptive parameters for multiplicative layer
@@ -349,11 +392,19 @@ class MultiplicativeBlock(nn.Module):
             mask_channels = in_channels
         if hidden_channels is None:
             hidden_channels = 2*in_channels
-            
-        self.net = nn.Sequential( 
+        
+        if version == 'v0':
+            self.net = nn.Sequential( 
                      MultiplicativeLayer(in_channels, info_channels, mask_channels, hidden_channels),
                      nn.Conv2d(hidden_channels, out_channels, kernel_size, stride, padding),
                      nn.ReLU()  )
+        elif version == 'v1':
+            self.net = nn.Sequential( 
+                     MultiplicativeLayer_v1(in_channels, info_channels, mask_channels, hidden_channels),
+                     nn.Conv2d(hidden_channels, out_channels, kernel_size, stride, padding),
+                     nn.ReLU()  )
+        else:
+            raise Exception("Version unknown. Please select v0 or v1.")
         
     def forward(self, x):
         x = self.net(x)
@@ -364,23 +415,39 @@ class MultiplicativeBlock(nn.Module):
 class MultiplicativeConvNet(nn.Module):
     
     def __init__(self, linear_size, in_channels=3, info_channels=6, mask_channels=4, hidden_channels=12, out_channels=[12,24], 
-                 max_pool_size=2, n_features=64, residual_hidden_dim=64, n_residual_layers=2):
+                 padding=1, max_pool_size=2, n_features=64, residual_hidden_dim=64, n_residual_layers=2, 
+                 version='v1', plug_off=False):
         
         super(MultiplicativeConvNet, self).__init__()
 
         n_multi_blocks = len(out_channels)
         self.out_channels = out_channels[-1]
-        self.out_size = self.compute_out_size(linear_size, n_multi_blocks, max_pool_size)
+        self.out_size = self.compute_out_size(linear_size, n_multi_blocks, max_pool_size, padding)
         self.n_features = n_features
         if debug:
             print("Out channels after forward1: ", self.out_channels)
             print("Linear size after forward1: ", self.out_size)
             
-        multi_blocks = nn.ModuleList(
-            [MultiplicativeBlock(in_channels+2, out_channels[0], info_channels, mask_channels, hidden_channels)]+
-            [MultiplicativeBlock(out_channels[i], out_channels[i+1], info_channels, mask_channels, hidden_channels) 
-             for i in range(n_multi_blocks-1)])
-        self.forward1 = nn.Sequential( PosEncoding(), *multi_blocks)
+        if plug_off:
+            self.forward1 = nn.Sequential(PosEncoding(), 
+                                          nn.Conv2d(in_channels+2, out_channels[-1], 3, 1, 1),
+                                          nn.ReLU(),
+                                          ResidualConvolutional(linear_size, out_channels[-1], hidden_channels),
+                                          nn.ReLU(),
+                                          ResidualConvolutional(linear_size, out_channels[-1], hidden_channels),
+                                          nn.ReLU()
+                                          )
+            
+        else:
+            multi_blocks = nn.ModuleList(
+                [MultiplicativeBlock(in_channels+2, out_channels[0], info_channels, 
+                                     mask_channels, hidden_channels, padding=padding, version=version)]+
+                [MultiplicativeBlock(out_channels[i], out_channels[i+1], info_channels, 
+                                     mask_channels, hidden_channels, padding=padding, version=version) 
+                 for i in range(n_multi_blocks-1)])
+            
+            self.forward1 = nn.Sequential( PosEncoding(), *multi_blocks)
+            
         self.maxpool = nn.MaxPool2d(max_pool_size)
 
         residual_MLP = nn.ModuleList([ResidualLayer(n_features, residual_hidden_dim)
@@ -405,8 +472,8 @@ class MultiplicativeConvNet(nn.Module):
         return x
     
     @staticmethod
-    def compute_out_size(linear_size, n_multi_blocks, max_pool_size):
-        size = (linear_size - 2*n_multi_blocks) // max_pool_size
+    def compute_out_size(linear_size, n_multi_blocks, max_pool_size, padding):
+        size = (linear_size - (2-2*padding)*n_multi_blocks) // max_pool_size
         return size
     
 class BoxWorldNet_v0(nn.Module):

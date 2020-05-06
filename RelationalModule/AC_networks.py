@@ -157,7 +157,7 @@ class MultiplicativeBasicCritic(nn.Module):
     activation function.
     """
     
-    def __init__(self, **net_args):
+    def __init__(self, linear_size, **net_args):
         """
         Parameters
         ----------

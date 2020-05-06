@@ -86,7 +86,7 @@ class BayesHPTuning():
         
             
 class BayesParam():
-    def __init__(self, values, priors, prior_sample_weight):
+    def __init__(self, values, priors, prior_sample_weight, max_steps=100):
         self.values = values
         self.priors = priors
         self.prior_adv = self.compute_prior_adv()
@@ -96,8 +96,16 @@ class BayesParam():
         self.stat = {}
         for idx in range(len(values)):
             self.stat[idx] = {'V_lambda':[], 'V':[], 'freq':0}
-            
+        
+        # Temperature annealing parameters
+        self.n_steps = 0
+        self.T0 = 1.
+        self.T1 = 1e-2
+        self.eta = (self.T0 - self.T1)/max_steps
+        self.T = self.T0
+        
     def sample(self):
+        self.linear_annealing_step()
         probs = self.get_updated_sampling_probs()
         idx = np.random.choice(np.arange(len(self.values)), p=probs)
         value = self.values[idx]
@@ -118,7 +126,7 @@ class BayesParam():
             advantages.append(biased_adv_j)
         # sampling probs are the softmax of the biased advantages 
         advantages = np.array(advantages)
-        probs = np.exp(advantages)/np.exp(advantages).sum()
+        probs = np.exp(advantages/self.T)/np.exp(advantages/self.T).sum()
         return probs
     
     def update_stat(self, V, V_lambda):
@@ -133,3 +141,7 @@ class BayesParam():
         log_pi = np.log(self.priors)
         prior_adv = log_pi - log_pi.mean()
         return prior_adv
+    
+    def linear_annealing_step(self):
+        self.T = np.max([self.T1, self.T - self.eta])
+        return

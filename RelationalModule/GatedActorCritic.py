@@ -28,8 +28,8 @@ class GatedBoxWorldA2C():
       
     """ 
     
-    def __init__(self, action_space, lr, gamma, TD=True, twin=False, tau = 1., 
-                 H=1e-2, n_steps = 1, device='cpu', actor_lr=None, critic_lr=None, radam=False, **box_net_args):
+    def __init__(self, action_space, lr, gamma, TD=True, twin=False, tau = 1., H=1e-2, n_steps = 1, 
+                 device='cpu', actor_lr=None, critic_lr=None, radam=False, use_target=True, update_every=5, **box_net_args):
         """
         Parameters
         ----------
@@ -90,6 +90,9 @@ class GatedBoxWorldA2C():
         self.tau = tau
         self.H = H
         self.n_steps = n_steps
+        self.use_target = use_target
+        self.update_every = update_every
+        self.n_updates = 0
         
         self.actor = GatedBoxWorldActor(action_space, **box_net_args)
         self.critic = GatedBoxWorldCritic(twin, **box_net_args)
@@ -175,6 +178,8 @@ class GatedBoxWorldA2C():
     
     def update_TD(self, rewards, log_probs, distributions, states, done, bootstrap=None):   
         
+        self.n_updates +=1
+        
         ### Compute n-steps rewards, states, discount factors and done mask ###
         
         n_step_rewards = self.compute_n_step_rewards(rewards)
@@ -220,7 +225,12 @@ class GatedBoxWorldA2C():
         
         ### Update critic and then actor ###
         critic_loss = self.update_critic_TD(n_step_rewards, new_states, old_states, done, Gamma_V)
-        actor_loss, entropy = self.update_actor_TD(n_step_rewards, log_probs, distributions, new_states, old_states, done, Gamma_V)
+        if (self.n_updates % self.update_every == 0):
+            actor_loss, entropy = self.update_actor_TD(n_step_rewards, log_probs, distributions, 
+                                                       new_states, old_states, done, Gamma_V)
+        else:
+            actor_loss = 0
+            entropy = 0
         
         return critic_loss, actor_loss, entropy
     
@@ -273,15 +283,19 @@ class GatedBoxWorldA2C():
         # Compute gradient 
         if debug: print("Updating actor...")
         with torch.no_grad():
-            if self.twin:
-                V1, V2 = self.critic(old_states)
-                V_pred = torch.min(V1.squeeze(), V2.squeeze())
-                V1_new, V2_new = self.critic(new_states)
-                V_new = torch.min(V1_new.squeeze(), V2_new.squeeze())
-                V_trg = (1-done)*Gamma_V*V_new + n_step_rewards
+            if self.use_target:
+                V_pred = self.critic_trg(old_states).squeeze()
+                V_trg = (1-done)*Gamma_V*self.critic_trg(new_states).squeeze()  + n_step_rewards
             else:
-                V_pred = self.critic(old_states).squeeze()
-                V_trg = (1-done)*Gamma_V*self.critic(new_states).squeeze()  + n_step_rewards
+                if self.twin:
+                    V1, V2 = self.critic(old_states)
+                    V_pred = torch.min(V1.squeeze(), V2.squeeze())
+                    V1_new, V2_new = self.critic(new_states)
+                    V_new = torch.min(V1_new.squeeze(), V2_new.squeeze())
+                    V_trg = (1-done)*Gamma_V*V_new + n_step_rewards
+                else:
+                    V_pred = self.critic(old_states).squeeze()
+                    V_trg = (1-done)*Gamma_V*self.critic(new_states).squeeze()  + n_step_rewards
         
         A = V_trg - V_pred
         policy_gradient = - log_probs*A
