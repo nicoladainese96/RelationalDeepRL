@@ -28,7 +28,7 @@ class GatedBoxWorldA2C():
       
     """ 
     
-    def __init__(self, action_space, lr, gamma, TD=True, twin=False, tau = 1., H=1e-2, n_steps = 1, 
+    def __init__(self, action_space, lr, gamma=0.99, TD=True, twin=False, tau = 1., H=1e-2, n_steps = 1, 
                  device='cpu', actor_lr=None, critic_lr=None, radam=False, use_target=True, update_every=5, **box_net_args):
         """
         Parameters
