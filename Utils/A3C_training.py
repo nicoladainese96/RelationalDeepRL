@@ -163,17 +163,33 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
             performance.append(np.mean(episode_reward))
             steps_to_solve.append(np.mean(episode_steps))
             print("Test %d - reward %.2f - steps to solve %.2f"%(test_counter, performance[-1], steps_to_solve[-1]))
-            critic_losses.append(critic_loss)
-            actor_losses.append(actor_loss)
-            entropies.append(entropy)
+            critic_losses.append(critic_loss.detach().cpu())
+            actor_losses.append(actor_loss.detach().cpu())
+            entropies.append(entropy.detach().cpu())
         else:
             time.sleep(0.01) # wait 1 sec
             #pass
         if test_counter == max_tests:
             break
     if queue:
-        Q.put([performance, steps_to_solve, critic_losses, actor_losses, entropies]) # TO CHECK
-                
+        print("Putting results in queue")
+        #Q.put([performance, steps_to_solve, critic_losses, actor_losses, entropies]) # TO CHECK  
+        print("performance (put) ", performance)
+        Q.put(performance)
+        time.sleep(0.1)
+        print("steps_to_solve (put)", steps_to_solve)
+        Q.put(steps_to_solve)
+        time.sleep(0.1)
+        print("critic_losses (put)", critic_losses)
+        Q.put(critic_losses)
+        time.sleep(0.1)
+        print("actor_losses (put) ", actor_losses)
+        Q.put(actor_losses)
+        time.sleep(0.1)
+        print("entropies (put)", entropies)
+        Q.put(entropies)
+        time.sleep(0.1)
+        
 def train_sandbox(agent_constructor, learning_rate, game_params, n_training_threads=3, n_episodes=1000,
                   max_steps=120, return_agent=False, random_init=True):
     
@@ -198,14 +214,28 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
         p.start()
         processes.append(p)
     print("All processes started")
+    
+    if queue:
+        performance = Q.get() # TO CHECK
+        print("performance (get)", performance)
+        steps_to_solve = Q.get() # TO CHECK
+        print("steps_to_solve (get)", steps_to_solve)
+        critic_losses = Q.get() # TO CHECK
+        print("critic_losses (get)", critic_losses)
+        actor_losses = Q.get() # TO CHECK
+        print("actor_losses (get)", actor_losses)
+        entropies = Q.get() # TO CHECK
+        print("entropies (get)", entropies)
+        
+        #performance, steps_to_solve, critic_losses, actor_losses, entropies = results
+        losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
+
+        
     for p in processes:
         p.join()
     print("All processes finished")
         
     if queue:
-        results = Q.get() # TO CHECK
-        performance, steps_to_solve, critic_losses, actor_losses, entropies = results
-        losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
         if return_agent:
             return performance, global_model, losses, steps_to_solve
         else:
