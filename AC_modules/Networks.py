@@ -8,6 +8,28 @@ from AC_modules.Layers import *
 
 debug = False
 
+class CoordinateNet(nn.Module):
+    def __init__(self, observation_space, n_features, hiddens=[64,32], device=None):
+        super(CoordinateNet, self).__init__()
+        
+        layers = []
+        layers.append(nn.Linear(observation_space, hiddens[0]))
+        layers.append(nn.ReLU())
+        for i in range(0,len(hiddens)-1):
+            layers.append(nn.Linear(hiddens[i], hiddens[i+1]))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(hiddens[-1], n_features))
+        layers.append(nn.ReLU())
+        
+        self.net = nn.Sequential(*layers)
+    
+    def forward(self, state):
+        if debug: 
+            print("state.shape: ", state.shape)
+        if len(state.shape) == 1:
+            state = state.unsqueeze(0)
+        return self.net(state)
+    
 class MultiplicativeNet(nn.Module):
     def __init__(self, in_channels=3, info_channels=2, mask_channels=2, device=None):
         super(MultiplicativeNet, self).__init__()

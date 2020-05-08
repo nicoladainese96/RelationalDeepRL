@@ -302,8 +302,8 @@ class IndependentAC(nn.Module):
         
         # ActorCritic architectures
         self.actor = Actor(model, action_space, n_features, device=device, **HPs)
-        self.critic = Critic(model, n_features, twin=True, device=device, **HPs)
-        self.critic_trg = Critic(model, n_features, twin=True, target=True, device=device, **HPs)
+        self.critic = Critic(model, n_features, twin=twin, device=device, **HPs)
+        self.critic_trg = Critic(model, n_features, twin=twin, target=True, device=device, **HPs)
 
         # Init critic target identical to critic
         for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
