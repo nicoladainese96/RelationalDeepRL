@@ -8,7 +8,7 @@ from AC_modules.AdvantageActorCritic import SharedAC, IndependentAC
 
 from Utils import test_env
 
-debug = False
+debug = True
 queue = True
 
 def build_AC(model_dict): # works
@@ -67,17 +67,17 @@ def random_start(X=10, Y=10):
     goal = [s2//X, s2%X]
     return initial, goal
 
-def training_thread(global_model, game_params, learning_rate, n_episodes, max_steps, random_init, rank, optim_steps, env_steps):
+def training_thread(global_model, model_constructor, game_params, learning_rate, n_episodes, 
+                    max_steps, random_init, rank, optim_steps, env_steps):
     if debug:
         print("Entered process %d"%rank)
         print("Setting seed equal to rank...")
     torch.manual_seed(rank)
-    #local_model = model_constructor.generate_model()
-    #print("Constructed local model ")
-    #print("model_dict: ", model_dict)
-    local_model = copy.deepcopy(global_model)
-    if debug: print("Constructed local model ")
-        
+    
+    local_model = model_constructor.generate_model()
+    if debug: 
+        print("Constructed local model ")
+    
     local_model.load_state_dict(global_model.state_dict())
     if debug: print("Loaded state dictionary")
     
@@ -89,7 +89,7 @@ def training_thread(global_model, game_params, learning_rate, n_episodes, max_st
     performance = []
     steps_to_solve = []
     for e in range(n_episodes):
-        #print("Episode %d - process %d"%(e+1, rank))
+        if debug: print("Episode %d - process %d"%(e+1, rank))
         if random_init:
             # Change game params
             initial, goal = random_start(game_params["x"], game_params["y"])
@@ -99,9 +99,9 @@ def training_thread(global_model, game_params, learning_rate, n_episodes, max_st
             game_params["goal"] = goal
 
         env = test_env.Sandbox(**game_params)
-        #print("Environemnt created")
+        if debug: print("Environemnt created")
         rewards, log_probs, distributions, states, done, bootstrap = play_episode(local_model, env, max_steps)
-        #print("Episode played")
+        if debug: print("Episode played")
         env_steps.value += len(rewards) # hope it works asynchronously - TO CHECK
         
         performance.append(np.sum(rewards))
@@ -117,13 +117,17 @@ def training_thread(global_model, game_params, learning_rate, n_episodes, max_st
         # Update global model and then copy back updated params to local model
         optimizer.zero_grad()
         loss.mean().backward()
+        if debug: print("Computed backward")
         for global_param, local_param in zip(global_model.parameters(), local_model.parameters()):
             global_param._grad = local_param.grad
+        if debug: print("Copied params")
         optimizer.step()
         optim_steps.value += 1 # hope it works asynchronously - TO CHECK
-        global_model.update_target()
+        #global_model.update_target()
+        #if debug: print("Updated target")
         local_model.load_state_dict(global_model.state_dict())
-        
+        if debug: print("Loaded state dictionary")
+            
     print("Training process {} reached maximum episode.".format(rank))
     
     
@@ -138,6 +142,8 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
     critic_losses = [] 
     actor_losses = []
     entropies = []
+    optimizer_steps = []
+    
     while True:
         #print("optim_steps: ", optim_steps)
         if optim_steps.value > test_counter*test_every:
@@ -163,9 +169,10 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
             performance.append(np.mean(episode_reward))
             steps_to_solve.append(np.mean(episode_steps))
             print("Test %d - reward %.2f - steps to solve %.2f"%(test_counter, performance[-1], steps_to_solve[-1]))
-            critic_losses.append(critic_loss.detach().cpu())
-            actor_losses.append(actor_loss.detach().cpu())
-            entropies.append(entropy.detach().cpu())
+            critic_losses.append(critic_loss.detach().cpu().numpy())
+            actor_losses.append(actor_loss.detach().cpu().numpy())
+            entropies.append(entropy.detach().cpu().numpy())
+            optimizer_steps.append(optim_steps.value)
         else:
             time.sleep(0.01) # wait 1 sec
             #pass
@@ -189,11 +196,15 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
         print("entropies (put)", entropies)
         Q.put(entropies)
         time.sleep(0.1)
+        print("optimizer_steps (put) ", optimizer_steps)
+        Q.put(optimizer_steps)
+        time.sleep(0.1)
         
 def train_sandbox(agent_constructor, learning_rate, game_params, n_training_threads=3, n_episodes=1000,
                   max_steps=120, return_agent=False, random_init=True):
     
     global_model = agent_constructor.generate_model()
+    #global_model.init_target()
     global_model.share_memory()
     optim_steps = mp.Value('i')
     env_steps = mp.Value('i')
@@ -209,7 +220,7 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
                 p = mp.Process(target=test_thread, args=(global_model, game_params, n_episodes*n_training_threads, 
                                                      max_steps, random_init, optim_steps, ))
         else:
-            p = mp.Process(target=training_thread, args=(global_model, game_params, learning_rate, n_episodes,
+            p = mp.Process(target=training_thread, args=(global_model, agent_constructor, game_params, learning_rate, n_episodes,
                                                          max_steps, random_init, rank, optim_steps, env_steps,))
         p.start()
         processes.append(p)
@@ -217,16 +228,17 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
     
     if queue:
         performance = Q.get() # TO CHECK
-        print("performance (get)", performance)
+        print("performance (get)")#, performance)
         steps_to_solve = Q.get() # TO CHECK
-        print("steps_to_solve (get)", steps_to_solve)
+        print("steps_to_solve (get)")#, steps_to_solve)
         critic_losses = Q.get() # TO CHECK
-        print("critic_losses (get)", critic_losses)
+        print("critic_losses (get)")#, critic_losses)
         actor_losses = Q.get() # TO CHECK
-        print("actor_losses (get)", actor_losses)
+        print("actor_losses (get)")#, actor_losses)
         entropies = Q.get() # TO CHECK
-        print("entropies (get)", entropies)
-        
+        print("entropies (get)")#, entropies)
+        optimizer_steps = Q.get()
+        print("optimizer_steps (get)")#, optimizer_steps)
         #performance, steps_to_solve, critic_losses, actor_losses, entropies = results
         losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
 
@@ -237,9 +249,9 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
         
     if queue:
         if return_agent:
-            return performance, global_model, losses, steps_to_solve
+            return performance, global_model, losses, steps_to_solve, optimizer_steps
         else:
-            return performance, losses, steps_to_solve
+            return performance, losses, steps_to_solve, optimizer_steps
     else:
         if return_agent:
             return global_model

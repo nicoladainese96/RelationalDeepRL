@@ -9,8 +9,7 @@ from AC_modules.ActorCriticArchitecture import *
 debug = False
 
 class SharedAC(nn.Module):
-    def __init__(self, model, action_space, n_features, gamma=0.99, 
-                 tau = 1., H=1e-3, n_steps = 1, device='cpu',**HPs):
+    def __init__(self, model, action_space, n_features, gamma=0.99, H=1e-3, n_steps = 1, device='cpu',**HPs):
         """
         Parameters
         ----------
@@ -25,12 +24,6 @@ class SharedAC(nn.Module):
             Learning rate
         gamma: float in [0,1] (default=0.99)
             Discount factor
-        tau: float in [0,1] (default = 1.)
-            Regulates how fast the critic_target gets updates, i.e. what percentage of the weights
-            inherits from the critic. If tau=1., critic and critic_target are identical 
-            at every step, if tau=0. critic_target is unchangable. 
-            As a default this feature is disabled setting tau = 1, but if one wants to use it a good
-            empirical value is 0.005.
         H: float (default 1e-2)
             Entropy multiplicative factor in actor's loss
         n_steps: int (default=1)
@@ -44,16 +37,11 @@ class SharedAC(nn.Module):
         # Parameters
         self.gamma = gamma
         self.n_actions = action_space
-        self.tau = tau
         self.H = H
         self.n_steps = n_steps
         
-        # Buffers
-        #self.optim_steps = 0 # counts the number of optimization steps
-        #self.env_steps = 0 # counts the number of environment steps
-        
         if debug: print("params and buffers check")
-        self.AC = SharedActorCritic(model, action_space, n_features, tau, device=device, **HPs)
+        self.AC = SharedActorCritic_no_trg(model, action_space, n_features, device=device, **HPs)
         if debug: print("architecture check")
         self.device = device 
         self.AC.to(self.device) 
@@ -62,7 +50,6 @@ class SharedAC(nn.Module):
             print("="*10 +" A2C HyperParameters "+"="*10)
             print("Discount factor: ", self.gamma)
             print("Action space: ", self.n_actions)
-            print("Update critic target factor: ", self.tau)
             print("n_steps for TD: ", self.n_steps)
             print("Device used: ", self.device)
             print("\n\n"+"="*10 +" A2C Architecture "+"="*10)
@@ -77,12 +64,6 @@ class SharedAC(nn.Module):
             return action, log_probs.view(-1)[action], probs
         else:
             return action
-        
-    def init_target(self):
-        self.AC.init_target()
-        
-    def update_target(self):
-        self.AC.update_target()
         
     def compute_ac_loss(self, rewards, log_probs, distributions, states, done, bootstrap=None): 
         ### Compute n-steps rewards, states, discount factors and done mask ###
@@ -143,7 +124,7 @@ class SharedAC(nn.Module):
         # Compute loss 
         if debug: print("Updating critic...")
         with torch.no_grad():
-            V_trg = self.AC.V_target(new_states).squeeze()
+            V_trg = self.AC.V_critic(new_states).squeeze()
             if debug:
                 print("V_trg.shape (after critic): ", V_trg.shape)
             V_trg = (1-done)*Gamma_V*V_trg + n_step_rewards
@@ -257,8 +238,7 @@ class SharedAC(nn.Module):
             
     
 class IndependentAC(nn.Module):
-    def __init__(self, model, action_space, n_features, gamma=0.99, tau = 1., 
-                 twin=False, H=1e-3, n_steps = 1, device='cpu',**HPs):
+    def __init__(self, model, action_space, n_features, gamma=0.99, twin=False, H=1e-3, n_steps = 1, device='cpu',**HPs):
         """
         Parameters
         ----------
@@ -275,12 +255,6 @@ class IndependentAC(nn.Module):
             Discount factor
         twin: bool (default=False)
             Enables twin networks both for critic and critic_target
-        tau: float in [0,1] (default = 1.)
-            Regulates how fast the critic_target gets updates, i.e. what percentage of the weights
-            inherits from the critic. If tau=1., critic and critic_target are identical 
-            at every step, if tau=0. critic_target is unchangable. 
-            As a default this feature is disabled setting tau = 1, but if one wants to use it a good
-            empirical value is 0.005.
         H: float (default 1e-2)
             Entropy multiplicative factor in actor's loss
         n_steps: int (default=1)
@@ -295,40 +269,27 @@ class IndependentAC(nn.Module):
         self.gamma = gamma
         self.n_actions = action_space
         self.twin = twin 
-        self.tau = tau
         self.H = H
         self.n_steps = n_steps
-        
-        # Buffers
-        #self.optim_steps = 0 # counts the number of optimization steps
-        #self.env_steps = 0 # counts the number of environment steps
-        
+
         # ActorCritic architectures
         self.actor = Actor(model, action_space, n_features, device=device, **HPs)
         self.critic = Critic(model, n_features, twin=twin, device=device, **HPs)
-        #self.critic_trg = Critic(model, n_features, twin=twin, target=True, device=device, **HPs)
-
-        # Init critic target identical to critic
-        #for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
-        #    trg_params.data.copy_(params.data)
         
         self.device = device 
         self.actor.to(self.device) 
         self.critic.to(self.device)
-        #self.critic_trg.to(self.device)
         
         if debug:
             print("="*10 +" A2C HyperParameters "+"="*10)
             print("Discount factor: ", self.gamma)
             print("Action space: ", self.n_actions)
             print("Twin networks: ", self.twin)
-            print("Update critic target factor: ", self.tau)
             print("n_steps for TD: ", self.n_steps)
             print("Device used: ", self.device)
             print("\n\n"+"="*10 +" A2C Architecture "+"="*10)
             print("Actor architecture: \n", self.actor)
             print("Critic architecture: \n",self.critic)
-            #print("Critic target architecture: \n", self.critic_trg)
             
     def get_action(self, state, return_log=False):
         state = torch.from_numpy(state).float().to(self.device)
@@ -339,15 +300,6 @@ class IndependentAC(nn.Module):
             return action, log_probs.view(-1)[action], probs
         else:
             return action
-    
-    def init_target(self):
-        # Init critic target identical to critic
-        for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
-            trg_params.data.copy_(params.data)
-            
-    def update_target(self):
-        for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
-                trg_params.data.copy_((1.-self.tau)*trg_params.data + self.tau*params.data)
                 
     def compute_ac_loss(self, rewards, log_probs, distributions, states, done, bootstrap=None): 
         ### Compute n-steps rewards, states, discount factors and done mask ###
@@ -408,7 +360,11 @@ class IndependentAC(nn.Module):
         # Compute loss 
         if debug: print("Updating critic...")
         with torch.no_grad():
-            V_trg = self.critic_trg(new_states).squeeze()
+            if self.twin:
+                V1_trg, V2_trg = self.critic(new_states)
+                V_trg = torch.min(V1_trg, V2_trg).squeeze()
+            else:
+                V_trg = self.critic(new_states).squeeze()
             if debug:
                 print("V_trg.shape (after critic): ", V_trg.shape)
             V_trg = (1-done)*Gamma_V*V_trg + n_step_rewards
