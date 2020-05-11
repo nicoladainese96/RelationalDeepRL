@@ -33,7 +33,6 @@ def play_episode(agent, env, max_steps):
      
         action, log_prob, distrib = agent.get_action(state, return_log = True)
         new_state, reward, terminal, info = env.step(action)
-        if debug: print("state.shape: ", new_state.shape)
         rewards.append(reward)
         log_probs.append(log_prob)
         distributions.append(distrib)
@@ -71,13 +70,17 @@ def training_thread(global_model, model_constructor, game_params, learning_rate,
                     max_steps, random_init, rank, optim_steps, env_steps):
     if debug:
         print("Entered process %d"%rank)
-        print("Setting seed equal to rank...")
-    torch.manual_seed(rank)
-    
+        print("Setting numpy and torch seeds...")
+    np.random.seed()
+    seed = np.random.randint(10000)
+    torch.manual_seed(seed)
+    #local_model = model_constructor.generate_model()
+    #print("Constructed local model ")
+    #print("model_dict: ", model_dict)
     local_model = model_constructor.generate_model()
-    if debug: 
-        print("Constructed local model ")
-    
+    if debug: print("Constructed local model ")
+        
+
     local_model.load_state_dict(global_model.state_dict())
     if debug: print("Loaded state dictionary")
     
@@ -107,20 +110,22 @@ def training_thread(global_model, model_constructor, game_params, learning_rate,
         performance.append(np.sum(rewards))
         steps_to_solve.append(len(rewards))
         
-        if (e+1)%10 == 0:
-            print("Episode %d of process %d - reward: %.2f - steps to solve: %.2f"%(e+1, rank, np.mean(performance[-10:]), np.mean(steps_to_solve[-10:])))
+        #if (e+1)%10 == 0:
+        #    print("Episode %d of process %d - reward: %.2f - steps to solve: %.2f"%(e+1, rank, np.mean(performance[-10:]), np.mean(steps_to_solve[-10:])))
         #print("Episode %d of process %d - reward: %.2f - steps to solve: %.2f"%(e+1, rank, performance[-1], steps_to_solve[-1]))
         
         critic_loss, actor_loss, entropy = local_model.compute_ac_loss(rewards, log_probs, distributions, states, done, bootstrap)
-        loss = critic_loss + actor_loss
-        
+        #print("Loss computed")
+        loss = (critic_loss + actor_loss).mean()
+        #print("Loss summed")
         # Update global model and then copy back updated params to local model
         optimizer.zero_grad()
-        loss.mean().backward()
-        if debug: print("Computed backward")
+        #print("Gradient zeroed")
+        loss.backward()
+        #print("Backward")
         for global_param, local_param in zip(global_model.parameters(), local_model.parameters()):
             global_param._grad = local_param.grad
-        if debug: print("Copied params")
+        #print("Gradient copied")
         optimizer.step()
         optim_steps.value += 1 # hope it works asynchronously - TO CHECK
         #global_model.update_target()
@@ -131,11 +136,16 @@ def training_thread(global_model, model_constructor, game_params, learning_rate,
     print("Training process {} reached maximum episode.".format(rank))
     
     
-def test_thread(global_model, game_params, tot_episodes, max_steps, random_init, optim_steps, 
-                Q=None, episodes_per_test=10, test_every=10):
+def test_thread(global_model, game_params, tot_episodes, max_steps, random_init, optim_steps, n_processes,
+                Q=None, episodes_per_test=1, test_every=10):
     print("Test process started")
     test_counter = 1
-    max_tests = tot_episodes // test_every
+    max_tests = (tot_episodes*n_processes // test_every) -n_processes
+    print("max_tests: ", max_tests)
+    
+    np.random.seed()
+    seed = np.random.randint(10000)
+    torch.manual_seed(seed)
     
     performance = []
     steps_to_solve = []
@@ -145,7 +155,8 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
     optimizer_steps = []
     
     while True:
-        #print("optim_steps: ", optim_steps)
+        print("optim_steps: ", optim_steps.value)
+        print("test counter: ", test_counter)
         if optim_steps.value > test_counter*test_every:
             test_counter +=1
             episode_reward = []
@@ -168,11 +179,13 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
                     critic_loss, actor_loss, entropy = global_model.compute_ac_loss(rewards, log_probs, distributions, states, done, bootstrap)
             performance.append(np.mean(episode_reward))
             steps_to_solve.append(np.mean(episode_steps))
-            print("Test %d - reward %.2f - steps to solve %.2f"%(test_counter, performance[-1], steps_to_solve[-1]))
-            critic_losses.append(critic_loss.detach().cpu().numpy())
-            actor_losses.append(actor_loss.detach().cpu().numpy())
-            entropies.append(entropy.detach().cpu().numpy())
-            optimizer_steps.append(optim_steps.value)
+
+            if test_counter % 10:
+                print("Test %d - reward %.2f - steps to solve %.2f"%(test_counter, np.mean(performance[-10:]), np.mean(steps_to_solve[-10:])))
+            critic_losses.append(critic_loss.detach().cpu().item())
+            actor_losses.append(actor_loss.detach().cpu().item())
+            entropies.append(entropy.detach().cpu().item())
+
         else:
             time.sleep(0.01) # wait 1 sec
             #pass
@@ -181,24 +194,24 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
     if queue:
         print("Putting results in queue")
         #Q.put([performance, steps_to_solve, critic_losses, actor_losses, entropies]) # TO CHECK  
-        print("performance (put) ", performance)
+        print("performance (put) ")#, performance)
         Q.put(performance)
-        time.sleep(0.1)
-        print("steps_to_solve (put)", steps_to_solve)
+        #time.sleep(0.5)
+        print("steps_to_solve (put)")#, steps_to_solve)
         Q.put(steps_to_solve)
-        time.sleep(0.1)
-        print("critic_losses (put)", critic_losses)
+        #time.sleep(0.5)
+        print("critic_losses (put)")#, critic_losses)
         Q.put(critic_losses)
-        time.sleep(0.1)
-        print("actor_losses (put) ", actor_losses)
+        #time.sleep(0.5)
+        print("actor_losses (put) ")#, actor_losses)
         Q.put(actor_losses)
-        time.sleep(0.1)
-        print("entropies (put)", entropies)
+        #time.sleep(0.5)
+        print("entropies (put)")#, entropies)
         Q.put(entropies)
-        time.sleep(0.1)
-        print("optimizer_steps (put) ", optimizer_steps)
+        print("optimizer_steps (put) ")#, optimizer_steps)
         Q.put(optimizer_steps)
         time.sleep(0.1)
+
         
 def train_sandbox(agent_constructor, learning_rate, game_params, n_training_threads=3, n_episodes=1000,
                   max_steps=120, return_agent=False, random_init=True):
@@ -214,11 +227,11 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
     for rank in range( n_training_threads + 1):  # + 1 for test process
         if rank == 0:
             if queue:
-                p = mp.Process(target=test_thread, args=(global_model, game_params, n_episodes*n_training_threads, 
-                                                     max_steps, random_init, optim_steps, Q,))
+                p = mp.Process(target=test_thread, args=(global_model, game_params, n_episodes, 
+                                                     max_steps, random_init, optim_steps, n_training_threads, Q,))
             else:
-                p = mp.Process(target=test_thread, args=(global_model, game_params, n_episodes*n_training_threads, 
-                                                     max_steps, random_init, optim_steps, ))
+                p = mp.Process(target=test_thread, args=(global_model, game_params, n_episodes, 
+                                                     max_steps, random_init, optim_steps, n_training_threads,))
         else:
             p = mp.Process(target=training_thread, args=(global_model, agent_constructor, game_params, learning_rate, n_episodes,
                                                          max_steps, random_init, rank, optim_steps, env_steps,))
@@ -229,6 +242,7 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
     if queue:
         performance = Q.get() # TO CHECK
         print("performance (get)")#, performance)
+
         steps_to_solve = Q.get() # TO CHECK
         print("steps_to_solve (get)")#, steps_to_solve)
         critic_losses = Q.get() # TO CHECK
@@ -239,6 +253,7 @@ def train_sandbox(agent_constructor, learning_rate, game_params, n_training_thre
         print("entropies (get)")#, entropies)
         optimizer_steps = Q.get()
         print("optimizer_steps (get)")#, optimizer_steps)
+        Q.close()
         #performance, steps_to_solve, critic_losses, actor_losses, entropies = results
         losses = dict(critic_losses=critic_losses, actor_losses=actor_losses, entropies=entropies)
 
