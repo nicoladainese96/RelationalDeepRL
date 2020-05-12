@@ -310,13 +310,13 @@ class IndependentAC(nn.Module):
         self.critic_trg = Critic(model, n_features, twin=twin, target=True, device=device, **HPs)
 
         # Init critic target identical to critic
-        #for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
-        #    trg_params.data.copy_(params.data)
+        for trg_params, params in zip(self.critic_trg.parameters(), self.critic.parameters()):
+            trg_params.data.copy_(params.data)
         
         self.device = device 
         self.actor.to(self.device) 
         self.critic.to(self.device)
-        #self.critic_trg.to(self.device)
+        self.critic_trg.to(self.device)
         
         if debug:
             print("="*10 +" A2C HyperParameters "+"="*10)
