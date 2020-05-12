@@ -8,7 +8,7 @@ from AC_modules.AdvantageActorCritic import SharedAC, IndependentAC
 
 from Utils import test_env
 
-debug = True
+debug = False
 queue = True
 
 def build_AC(model_dict): # works
@@ -141,7 +141,7 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
     print("Test process started")
     test_counter = 1
     max_tests = (tot_episodes*n_processes // test_every) -n_processes
-    print("max_tests: ", max_tests)
+    #print("max_tests: ", max_tests)
     
     np.random.seed()
     seed = np.random.randint(10000)
@@ -155,8 +155,8 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
     optimizer_steps = []
     
     while True:
-        print("optim_steps: ", optim_steps.value)
-        print("test counter: ", test_counter)
+        #print("optim_steps: ", optim_steps.value)
+        #print("test counter: ", test_counter)
         if optim_steps.value > test_counter*test_every:
             test_counter +=1
             episode_reward = []
@@ -185,6 +185,7 @@ def test_thread(global_model, game_params, tot_episodes, max_steps, random_init,
             critic_losses.append(critic_loss.detach().cpu().item())
             actor_losses.append(actor_loss.detach().cpu().item())
             entropies.append(entropy.detach().cpu().item())
+            optimizer_steps.append(optim_steps.value)
 
         else:
             time.sleep(0.01) # wait 1 sec

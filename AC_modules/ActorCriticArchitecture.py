@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F 
 import itertools as it
 
-debug = True
+debug = False
 
 ### Independent Actor Critic architectures ###
 
@@ -97,10 +97,7 @@ class SharedActorCritic(nn.Module):
         self.critic = SharedCritic(n_features)
         
         self.critic_target = BaseCritic(model, n_features, **HPs)
-
-        
-            
-        #print("last check")
+        self.init_target()
         
     def forward(self, state):
         shared_repr = self.shared_architecture(state)
