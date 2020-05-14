@@ -2,6 +2,7 @@ from AC_modules.Networks import *
 #from AC_modules.AdvantageActorCritic import SharedAC, IndependentAC
 from AC_modules import AdvantageActorCritic as AAC
 from AC_modules import AdvantageAC_no_trg as AAC_no_trg
+from AC_modules import BatchedA2C
 
 debug = True
 
@@ -54,3 +55,28 @@ class ActorCriticConstructor_no_trg():
             return AAC_no_trg.SharedAC(self.model, *self.args, **self.kwargs)
         else:
             return AAC_no_trg.IndependentAC(self.model, *self.args, **self.kwargs)
+
+class BatchedA2CConstructor():
+    def __init__(self, model_name, shared, *args, **kwargs):
+        try:
+            model = eval(model_name)
+            print("Model: ", model)
+        except NameError:
+            print("Name of the model not found")
+            return -1
+
+        self.model = model
+        self.shared = shared
+        self.args = args
+        self.kwargs = kwargs
+        if debug:
+            print("self.model: ", self.model)
+            print("self.shared: ", self.shared)
+            print("self.args: ", self.args)
+            print("self.kwargs: ", self.kwargs)
+        
+    def generate_model(self):
+        if self.shared:
+            return BatchedA2C.SharedA2C(self.model, *self.args, **self.kwargs)
+        else:
+            return BatchedA2C.IndependentA2C(self.model, *self.args, **self.kwargs)

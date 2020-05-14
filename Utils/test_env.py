@@ -150,6 +150,12 @@ class Sandbox():
             enc_state = self.encode_state()
         return enc_state
     
+    def random_reset(self):
+        s1, s2 = np.random.choice(self.boundary[0]*self.boundary[1], 2, replace=False)
+        self.initial = np.array([s1//self.boundary[0], s1%self.boundary[0]])
+        self.goal = [s2//self.boundary[0], s2%self.boundary[0]]
+        return self.reset()
+    
     def dist_to_goal(self, state):
         dx = np.abs(state[0] - self.goal[0])
         dy = np.abs(state[1] - self.goal[1])
