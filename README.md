@@ -67,14 +67,14 @@ Finally I devised a Constructor (Constructor.py) kind of classes that can connec
 
 Contains trainig, plotting, rendering and also environment scripts
 
-A2C_template.py: starting point for batched A2C
-A3C_training.py: A3C training for Sandbox
-batched_A2C_training.py: batched A2C training for Sandbox (except training loop that is in batched_A2C_dev.ipynb)
-HP_tuning.py: script for bayesian search 
-plot.py: plotting functions
-single_A2C_training.py: single-process A2C training for Sandbox from AC_modules
-supervised.py: all functions used to train in a supervised fashion networks on Sandbox
-test_env.py: contains Sandbox environment class
-train_agent.py: single-process A2C training for BoxWorld from RelationalModule
-train_agent_sandbox.py: single-process A2C training for Sandbox from RelationalModule
-utils.py : save and load sessions; render episodes starting from trained agents
+- A2C_template.py: starting point for batched A2C
+- A3C_training.py: A3C training for Sandbox
+- batched_A2C_training.py: batched A2C training for Sandbox (except training loop that is in batched_A2C_dev.ipynb)
+- HP_tuning.py: script for bayesian search 
+- plot.py: plotting functions
+- single_A2C_training.py: single-process A2C training for Sandbox from AC_modules
+- supervised.py: all functions used to train in a supervised fashion networks on Sandbox
+- test_env.py: contains Sandbox environment class
+- train_agent.py: single-process A2C training for BoxWorld from RelationalModule
+- train_agent_sandbox.py: single-process A2C training for Sandbox from RelationalModule
+- utils.py : save and load sessions; render episodes starting from trained agents
