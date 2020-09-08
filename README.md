@@ -55,9 +55,9 @@ Here finally there is a hierarchical order in most files:
 - ActorCriticArchitecture.py: independent and shared architecture classes for actor and critic
 
 And then there are the 3 different Actor-Critic agents:
-AdvantageActorCritic.py: single-process A2C
-AdvantageAC_no_trg.py: A3C agent (all the multiprocessing/training part is in another script)
-BatchedA2C.py: batched A2C agent (all the multiprocessing/training part is in another script)
+- AdvantageActorCritic.py: single-process A2C
+- AdvantageAC_no_trg.py: A3C agent (all the multiprocessing/training part is in another script)
+- BatchedA2C.py: batched A2C agent (all the multiprocessing/training part is in another script)
 
 Main difference between this AC agents and the ones in the RelationalModule is that I took out of the class the optimization step and I just coded the functions that compute the losses from the trajectories. This is because for example in the A3C the optimization is not that straightforward, but you call loss.backward() on a CPU process and then copy the gradients of the parameters on a global model and do there the optimization. So then I adjusted the style of coding for all the architectures. This also means that the learning rate is no more automatically saved with the HPs of the model (I should fix that).
 
